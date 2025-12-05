@@ -1,5 +1,7 @@
 /data/*
 !/data/goldens/
+/models/kokoro-v1.0.onnx
+/models/voices-v1.0.bin
 __pycache__/
 *.py[cod]
 *$py.class
@@ -8,4 +10,3 @@ __pycache__/
 env/
 venv/
 *.wav
-
