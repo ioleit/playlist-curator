@@ -1,0 +1,7 @@
+kokoro-onnx
+soundfile
+onnxruntime
+langgraph
+langchain-core
+
+requests

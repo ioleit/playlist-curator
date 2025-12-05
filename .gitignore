@@ -1,0 +1,11 @@
+/data/*
+!/data/goldens/
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+.venv
+env/
+venv/
+*.wav
+
