@@ -38,6 +38,7 @@ def get_all_playlist_items(youtube, playlist_id):
 def main():
     parser = argparse.ArgumentParser(description="Build youtube_playlists.json from uploaded clips and config.")
     parser.add_argument("playlist_dir", help="Path to the playlist directory (e.g. data/playlists/space_jazz)")
+    parser.add_argument("--temp-name", help="Temporary name of the playlist on YouTube to look for (overrides topic name for search)", required=True)
     args = parser.parse_args()
 
     playlist_dir = args.playlist_dir
@@ -81,9 +82,12 @@ def main():
 
     playlist_title = playlist_config.get("topic", "Curated Playlist")
     
-    playlist_id = get_playlist_id_by_name(youtube, channel_id, playlist_title)
+    # Use temp_name for search
+    search_title = args.temp_name
+    
+    playlist_id = get_playlist_id_by_name(youtube, channel_id, search_title)
     if not playlist_id:
-        print(f"Error: Playlist '{playlist_title}' not found in channel {channel_id}.")
+        print(f"Error: Playlist '{search_title}' not found in channel {channel_id}.")
         return
     
     print(f"Found playlist ID: {playlist_id}")
@@ -100,10 +104,8 @@ def main():
         vid_id = item['contentDetails']['videoId']
         
         # Check pattern
-        # Look for explicit part_N.mp4 or just part_N
-        match = re.search(r'part_(\d+)\.mp4', title, re.IGNORECASE)
-        if not match:
-            match = re.search(r'part_(\d+)', title, re.IGNORECASE)
+        # Look for explicit part_N.mp4 or just part_N, allowing spaces or underscores
+        match = re.search(r'part[ _](\d+)', title, re.IGNORECASE)
         
         if match:
             # Make sure it's not "Part 1: Topic" (which is the formatted title)

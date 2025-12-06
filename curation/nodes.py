@@ -150,16 +150,41 @@ def extract_image_url(text: str) -> str:
 def verify_curation_node(state: AgentState):
     """
     Parses the raw script, verifies tracks, extracts image URLs,
-    and separates narrative text.
+    separates narrative text, and extracts the playlist title.
     """
     raw_script = state.get("raw_script") or state.get("text")
     playlist_dir = state.get("playlist_dir", "data")
+    config_path = os.path.join(playlist_dir, "config.json")
     tracks_file = os.path.join(playlist_dir, "tracks.json")
     
     if not raw_script:
         print("⚠️ No script to verify.")
         return {"narrative_segments": [], "verified_tracks": [], "segment_visual_prompts": []}
+
+    # Extract Title
+    playlist_title = None
+    title_match = re.search(r'\[TITLE:\s*(.*?)\]', raw_script)
+    if title_match:
+        playlist_title = title_match.group(1).strip()
+        print(f"📝 Found Generated Title: {playlist_title}")
+        
+        # Update config.json with the new title
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r") as f:
+                    config = json.load(f)
+                
+                config["topic"] = playlist_title # Update the topic/title
+                
+                with open(config_path, "w") as f:
+                    json.dump(config, f, indent=4)
+                print(f"    ✅ Updated config.json with new title.")
+            except Exception as e:
+                print(f"    ❌ Failed to update config.json: {e}")
     
+    # Clean the title tag from the script so it doesn't get narrated
+    raw_script = re.sub(r'\[TITLE:.*?\]', '', raw_script).strip()
+
     # Check if we already have verified tracks to save time/API calls
     # This is a simple optimization: if tracks.json exists and script hasn't changed (implied by caller), use it.
     # However, we need to re-parse narrative segments and image URLs because those aren't in tracks.json fully structured yet.
@@ -256,5 +281,6 @@ def verify_curation_node(state: AgentState):
     return {
         "narrative_segments": narrative_segments,
         "verified_tracks": verified_tracks,
-        "segment_visual_prompts": segment_visual_prompts
+        "segment_visual_prompts": segment_visual_prompts,
+        "playlist_title": playlist_title
     }

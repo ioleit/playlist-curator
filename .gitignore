@@ -13,3 +13,4 @@ venv/
 client_secret.json
 client_secrets.json
 token.pickle
+config.json

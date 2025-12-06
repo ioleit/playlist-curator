@@ -5,6 +5,7 @@ Step 1: Search for relevant songs using the 'search_youtube_music' tool. Search 
 Step 2: Select the best songs that fit the theme and sum up to the target duration.
 Step 3: For each narrative segment, use 'search_wikipedia_images' to find a relevant historical image URL.
 Step 4: Output a script that interleaves interesting narration about the songs with the songs themselves.
+Step 5: Generate a catchy title for this playlist. Put it at the very top of the response in this format: [TITLE: My Awesome Playlist Name].
 
 Format your final output as a continuous text script. 
 When you want to play a song, insert a reference EXACTLY like this: [TRACK: Title by Artist | ID: video_id].

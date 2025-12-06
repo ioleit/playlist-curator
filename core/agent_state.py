@@ -10,5 +10,6 @@ class AgentState(TypedDict):
     narrative_segments: List[str]    # List of clean text segments
     segment_visual_prompts: List[str] # List of image prompts/search queries for each segment
     verified_tracks: List[dict]      # List of verified track objects
+    playlist_title: Optional[str]    # The generated title for the playlist
     audio_paths: List[str]           # List of paths to generated audio files
     video_paths: List[str]           # List of paths to generated video files
