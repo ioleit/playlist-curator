@@ -3,5 +3,9 @@ soundfile
 onnxruntime
 langgraph
 langchain-core
-
+langchain-openai
+ytmusicapi
 requests
+google-api-python-client
+google-auth-oauthlib
+google-auth-httplib2

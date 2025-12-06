@@ -10,3 +10,6 @@ __pycache__/
 env/
 venv/
 *.wav
+client_secret.json
+client_secrets.json
+token.pickle
