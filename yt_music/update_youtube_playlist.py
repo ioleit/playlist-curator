@@ -119,7 +119,7 @@ def update_playlist_metadata(youtube, playlist_id, title, description):
 
 def update_video_metadata(youtube, video_id, title, description, attribution=""):
     """
-    Updates the title and description of a video.
+    Updates the title, description, and status (unlisted, not for kids, music category) of a video.
     """
     print(f"  📝 Updating metadata for {video_id}...")
     
@@ -129,17 +129,21 @@ def update_video_metadata(youtube, video_id, title, description, attribution="")
         
     try:
         youtube.videos().update(
-            part="snippet",
+            part="snippet,status",
             body={
                 "id": video_id,
                 "snippet": {
                     "title": title,
                     "description": final_description,
                     "categoryId": "10" # Music
+                },
+                "status": {
+                    "privacyStatus": "unlisted",
+                    "selfDeclaredMadeForKids": False
                 }
             }
         ).execute()
-        print("    ✅ Metadata updated.")
+        print("    ✅ Metadata and status updated (Unlisted, Not Made for Kids, Music).")
     except Exception as e:
         print(f"    ❌ Failed to update metadata: {e}")
 
