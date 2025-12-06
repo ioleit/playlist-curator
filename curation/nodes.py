@@ -24,7 +24,8 @@ def curate_playlist_node(state: AgentState):
         print("Warning: OpenRouter API key not found in config.json or environment.")
     
     topic = state.get("topic", "Jazz history")
-    num_songs = state.get("num_songs", 5)
+    duration = state.get("duration", "30m")
+    duration_text = duration
     playlist_dir = state.get("playlist_dir", "data")
     
     # Ensure playlist directory exists (should be done by main, but safe to ensure)
@@ -50,7 +51,12 @@ def curate_playlist_node(state: AgentState):
         with open(default_path, "r") as f:
             system_message_template = f.read()
             
-    system_message = system_message_template.format(topic=topic, num_songs=num_songs)
+    # Check if template supports duration parameter to avoid KeyErrors for old templates
+    if "{duration}" in system_message_template:
+        system_message = system_message_template.format(topic=topic, duration=duration_text)
+    else:
+        # Fallback if template doesn't have duration (should update templates)
+        system_message = system_message_template.format(topic=topic)
     
     user_query = f"Create the curated playlist for {topic}"
     full_prompt_text = f"SYSTEM:\n{system_message}\n\nUSER:\n{user_query}"

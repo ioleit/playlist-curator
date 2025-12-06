@@ -2,6 +2,7 @@ import sys
 import json
 import os
 import time
+import pytimeparse
 from langgraph.graph import StateGraph, END
 from core.agent_state import AgentState
 from text_to_speech.nodes import generate_speech_node
@@ -64,16 +65,26 @@ def main():
         sys.exit(1)
 
     topic = request_config.get("topic", "Artificial Intelligence")
-    num_songs = request_config.get("num_songs", 5)
     system_prompt = request_config.get("system_prompt", "default")
-        
+    duration_str = request_config.get("duration", "30m") # Default to 30m if not specified
+
+    if duration_str:
+        seconds = pytimeparse.parse(duration_str)
+        if seconds is None:
+            print(f"Error: Invalid duration format '{duration_str}'")
+            sys.exit(1)
+        if seconds > 3 * 60 * 60: # 3 hours
+            print(f"Error: Duration '{duration_str}' exceeds maximum of 3 hours.")
+            sys.exit(1)
+        print(f"Target Duration: {duration_str} ({seconds} seconds)")
+
     print(f"Running workflow for playlist: {playlist_name}")
     print(f"Topic: {topic}")
     print(f"Output directory: {playlist_dir}")
     
     initial_state = {
         "topic": topic,
-        "num_songs": num_songs,
+        "duration": duration_str,
         "playlist_dir": playlist_dir,
         "system_prompt": system_prompt,
         "text": None,

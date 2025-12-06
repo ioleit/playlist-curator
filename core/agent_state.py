@@ -2,7 +2,7 @@ from typing import TypedDict, Optional, List, Any
 
 class AgentState(TypedDict):
     topic: str
-    num_songs: int
+    duration: Optional[str]
     playlist_dir: str
     system_prompt: Optional[str]
     text: Optional[str]              # Deprecated
