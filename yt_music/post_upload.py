@@ -38,8 +38,14 @@ def get_all_playlist_items(youtube, playlist_id):
 def main():
     parser = argparse.ArgumentParser(description="Build youtube_playlists.json from uploaded clips and config.")
     parser.add_argument("playlist_dir", help="Path to the playlist directory (e.g. data/playlists/space_jazz)")
-    parser.add_argument("--temp-name", help="Temporary name of the playlist on YouTube to look for (overrides topic name for search)", required=True)
+    parser.add_argument("--temp-name", help="Temporary name of the playlist on YouTube to look for (overrides topic name for search)", required=False)
+    parser.add_argument("--playlist-id", help="Directly provide Playlist ID (skips search)", required=False)
     args = parser.parse_args()
+
+    if not args.temp_name and not args.playlist_id:
+        print("Error: Must provide either --temp-name or --playlist-id")
+        return
+
 
     playlist_dir = args.playlist_dir
     if not os.path.exists(playlist_dir):
@@ -82,13 +88,14 @@ def main():
 
     playlist_title = playlist_config.get("topic", "Curated Playlist")
     
-    # Use temp_name for search
-    search_title = args.temp_name
-    
-    playlist_id = get_playlist_id_by_name(youtube, channel_id, search_title)
+    playlist_id = args.playlist_id
     if not playlist_id:
-        print(f"Error: Playlist '{search_title}' not found in channel {channel_id}.")
-        return
+        # Use temp_name for search
+        search_title = args.temp_name
+        playlist_id = get_playlist_id_by_name(youtube, channel_id, search_title)
+        if not playlist_id:
+            print(f"Error: Playlist '{search_title}' not found in channel {channel_id}.")
+            return
     
     print(f"Found playlist ID: {playlist_id}")
 

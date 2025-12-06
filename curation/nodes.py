@@ -211,6 +211,14 @@ def verify_curation_node(state: AgentState):
     segment_visual_prompts = []
     last_pos = 0
     
+    # Initialize Markdown content
+    md_lines = []
+    md_lines.append(f"# {playlist_title or state.get('topic', 'Curated Playlist')}")
+    md_lines.append(f"\n**Topic:** {state.get('topic', 'Unknown')}")
+    if state.get("duration"):
+        md_lines.append(f"**Target Duration:** {state.get('duration')}")
+    md_lines.append("\n---\n")
+    
     yt = YTMusic()
     
     for match in track_pattern.finditer(raw_script):
@@ -221,8 +229,15 @@ def verify_curation_node(state: AgentState):
         image_url = extract_image_url(raw_segment)
         
         if clean_segment:
+            part_num = len(narrative_segments) + 1
             narrative_segments.append(clean_segment)
             segment_visual_prompts.append(image_url) # Storing URL in prompts list for now
+            
+            # Add to Markdown
+            md_lines.append(f"## Part {part_num}")
+            if image_url:
+                md_lines.append(f"![Visual]({image_url})")
+            md_lines.append(f"\n{clean_segment}\n")
         else:
             pass
         
@@ -260,6 +275,17 @@ def verify_curation_node(state: AgentState):
                     "verified": False
                 })
             
+        # Add track to Markdown
+        track = verified_tracks[-1]
+        t_title = track.get("title", title_artist)
+        t_artist = track.get("artist", "")
+        t_id = track.get("video_id")
+        
+        md_lines.append(f"### 🎵 {t_title} - {t_artist}")
+        if t_id:
+             md_lines.append(f"[Listen on YouTube Music](https://music.youtube.com/watch?v={t_id})")
+        md_lines.append("\n---\n")
+
         last_pos = match.end()
     
     # Add remaining text as final segment
@@ -268,10 +294,23 @@ def verify_curation_node(state: AgentState):
     final_image_url = extract_image_url(final_raw_segment)
     
     if final_clean_segment:
+        part_num = len(narrative_segments) + 1
         narrative_segments.append(final_clean_segment)
         segment_visual_prompts.append(final_image_url)
+        
+        # Add to Markdown
+        md_lines.append(f"## Part {part_num}")
+        if final_image_url:
+            md_lines.append(f"![Visual]({final_image_url})")
+        md_lines.append(f"\n{final_clean_segment}\n")
     
     print(f"✨ Verification Complete! Found {len(verified_tracks)} tracks, {len(narrative_segments)} narrative segments, and {len(segment_visual_prompts)} image URLs.")
+
+    # Save Markdown playlist
+    md_path = os.path.join(playlist_dir, "playlist.md")
+    with open(md_path, "w") as f:
+        f.write("\n".join(md_lines))
+    print(f"📄 Saved formatted playlist to: {md_path}")
 
     # Save verified tracks
     with open(tracks_file, "w") as f:

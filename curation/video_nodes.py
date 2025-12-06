@@ -94,11 +94,16 @@ def create_video_node(state: AgentState):
         
     print(f"🎥 Creating videos for {len(audio_paths)} segments using {ffmpeg_cmd}...")
     
+    # Get playlist name for file naming
+    playlist_name = os.path.basename(playlist_dir)
+    if not playlist_name:
+        playlist_name = "playlist"
+
     for i, audio_path in enumerate(audio_paths):
         if not os.path.exists(audio_path):
             continue
             
-        filename = f"part_{i+1:03d}.mp4"
+        filename = f"{playlist_name}_part_{i+1:03d}.mp4"
         output_path = os.path.join(playlist_dir, filename)
         
         # Skip if video already exists
@@ -116,14 +121,13 @@ def create_video_node(state: AgentState):
             print(f"  ⚠️ No image found for segment {i+1}. Skipping.")
             continue
 
-        # Simple ffmpeg command to combine audio and image
-        # Loop image, tune for still image, shortest (end when audio ends)
-        # -pix_fmt yuv420p is needed for broad compatibility
-        # Added scale filter to ensure dimensions are divisible by 2 for libx264
+        # ffmpeg command to combine audio and image
+        # Forces 1920x1080 (16:9) landscape to avoid YouTube Shorts classification
+        # Scales image to fit and pads with black bars if necessary
         cmd = (
             f"{ffmpeg_cmd} -y -loop 1 -i '{image_path}' -i '{audio_path}' "
             f"-c:v libx264 -c:a aac -b:a 192k -pix_fmt yuv420p "
-            f"-vf 'scale=trunc(iw/2)*2:trunc(ih/2)*2' "
+            f"-vf 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1' "
             f"-shortest '{output_path}' > /dev/null 2>&1"
         )
         

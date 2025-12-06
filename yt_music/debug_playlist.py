@@ -11,19 +11,21 @@ def get_authenticated_service():
             creds = pickle.load(token)
     return build('youtube', 'v3', credentials=creds)
 
-def list_playlist_items(playlist_id):
+def list_channel_playlists(channel_id):
     youtube = get_authenticated_service()
-    request = youtube.playlistItems().list(
+    print(f"Listing playlists for channel: {channel_id}")
+    request = youtube.playlists().list(
         part="snippet",
-        playlistId=playlist_id,
+        channelId=channel_id,
         maxResults=50
     )
-    response = request.execute()
-    print(f"Items in playlist {playlist_id}:")
-    for item in response.get('items', []):
-        print(f"- Title: {item['snippet']['title']}")
-        print(f"  ID: {item['snippet']['resourceId']['videoId']}")
+    while request:
+        response = request.execute()
+        for item in response.get('items', []):
+            print(f"- Title: {item['snippet']['title']}")
+            print(f"  ID: {item['id']}")
+        request = youtube.playlists().list_next(request, response)
 
 if __name__ == "__main__":
-    list_playlist_items("PLga258EXDBTzTGWoR6LQ-OX72rTQdDUIC")
-
+    # Channel ID from config.json
+    list_channel_playlists("UCx4R55pScJEBpZTgELMIxkg")
