@@ -4,6 +4,7 @@ class AgentState(TypedDict):
     topic: str
     num_songs: int
     playlist_dir: str
+    system_prompt: Optional[str]
     text: Optional[str]              # Deprecated
     raw_script: Optional[str]        # The original LLM output with [TRACK] tags
     narrative_segments: List[str]    # List of clean text segments

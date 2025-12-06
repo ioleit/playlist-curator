@@ -2,7 +2,38 @@ import sys
 import json
 import os
 import time
-from curator_graph import app
+from langgraph.graph import StateGraph, END
+from core.agent_state import AgentState
+from text_to_speech.nodes import generate_speech_node
+from curation.nodes import curate_playlist_node, verify_curation_node
+from curation.video_nodes import generate_images_node, create_video_node
+
+# --- Graph Definition ---
+
+# Build the graph
+builder = StateGraph(AgentState)
+
+# Add nodes
+builder.add_node("curate_playlist", curate_playlist_node)
+builder.add_node("verify_curation", verify_curation_node)
+builder.add_node("generate_speech", generate_speech_node)
+builder.add_node("generate_images", generate_images_node)
+builder.add_node("create_video", create_video_node)
+
+# Set entry point
+builder.set_entry_point("curate_playlist")
+
+# Linear flow: Curate -> Verify -> Speech -> Images -> Video
+builder.add_edge("curate_playlist", "verify_curation")
+builder.add_edge("verify_curation", "generate_speech")
+builder.add_edge("generate_speech", "generate_images") 
+builder.add_edge("generate_images", "create_video")
+builder.add_edge("create_video", END)
+
+# Compile the graph
+app = builder.compile()
+
+# --- Main Execution ---
 
 def main():
     start_time = time.time()
@@ -34,6 +65,7 @@ def main():
 
     topic = request_config.get("topic", "Artificial Intelligence")
     num_songs = request_config.get("num_songs", 5)
+    system_prompt = request_config.get("system_prompt", "default")
         
     print(f"Running workflow for playlist: {playlist_name}")
     print(f"Topic: {topic}")
@@ -43,6 +75,7 @@ def main():
         "topic": topic,
         "num_songs": num_songs,
         "playlist_dir": playlist_dir,
+        "system_prompt": system_prompt,
         "text": None,
         "audio_path": None
     }
@@ -54,25 +87,7 @@ def main():
     duration = end_time - start_time
     print(f"\n✅ Workflow Complete in {duration:.2f} seconds")
     
-    # Save the generated text script to the directory as well
-    if result.get('text'):
-        script_path = os.path.join(playlist_dir, "script.txt")
-        with open(script_path, "w") as f:
-            f.write(result['text'])
-        print(f"Script saved to: {script_path}")
-
-    # Save verified tracks if available
-    if result.get('verified_tracks'):
-        tracks_path = os.path.join(playlist_dir, "tracks.json")
-        with open(tracks_path, "w") as f:
-            json.dump(result['verified_tracks'], f, indent=2)
-        print(f"Verified tracks saved to: {tracks_path}")
-        
-        print("\n🎶 Verified Tracks Found:")
-        for track in result['verified_tracks']:
-             print(f"  - {track.get('title')} by {track.get('artist')} (ID: {track.get('video_id')})")
-        print("")
-
+    # Print summary
     text = result.get('text')
     text_preview = text[:200] + "..." if text and len(text) > 200 else text
     print(f"Generated Text (preview): {text_preview}")
@@ -87,32 +102,7 @@ def main():
         print(f"\n🎬 Generated {len(video_paths)} Video Segments:")
         for path in video_paths:
             print(f"  - {path}")
-            
-        # Generate a simple m3u playlist for local testing
-        m3u_path = os.path.join(playlist_dir, "playlist_local.m3u")
-        with open(m3u_path, "w") as f:
-            # Interleave Logic: Audio Segment 1 -> Track 1 -> Audio Segment 2 -> ...
-            
-            segments = result.get("narrative_segments", [])
-            tracks = result.get("verified_tracks", [])
-            
-            # Usually we have N+1 segments for N tracks (Intro -> Track -> Middle -> Track -> Outro)
-            # But let's be robust to any count
-            
-            max_len = max(len(video_paths), len(tracks))
-            
-            for i in range(max_len):
-                # Add narrative segment if available
-                if i < len(video_paths):
-                     f.write(f"{os.path.abspath(video_paths[i])}\n")
-                
-                # Add music track link
-                if i < len(tracks):
-                     track = tracks[i]
-                     f.write(f"#EXTINF:{track.get('duration', 0)},{track.get('title')} - {track.get('artist')}\n")
-                     f.write(f"https://music.youtube.com/watch?v={track.get('video_id')}\n")
-
-        print(f"\nGenerated local M3U playlist at: {m3u_path}")
 
 if __name__ == "__main__":
     main()
+

@@ -33,26 +33,24 @@ def curate_playlist_node(state: AgentState):
     prompt_file = os.path.join(playlist_dir, "prompt.txt")
     response_file = os.path.join(playlist_dir, "response.txt")
     
-    system_message = f"""
-    You are an expert music curator. Your goal is to create a curated playlist about: {topic}.
-    You must select exactly {num_songs} songs.
+    # Load system prompt from file
+    system_prompt_name = state.get("system_prompt", "default")
+    if not system_prompt_name.endswith(".md"):
+        system_prompt_name += ".md"
+        
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    instruction_path = os.path.join(current_dir, "instructions", system_prompt_name)
     
-    Step 1: Search for relevant songs using the 'search_youtube_music' tool. Search for multiple options to find the best fits.
-    Step 2: Select the best {num_songs} songs that fit the theme.
-    Step 3: For each narrative segment, use 'search_wikipedia_images' to find a relevant historical image URL.
-    Step 4: Output a script that interleaves interesting narration about the songs with the songs themselves.
-    
-    Format your final output as a continuous text script. 
-    When you want to play a song, insert a reference EXACTLY like this: [TRACK: Title by Artist | ID: video_id].
-    
-    For the narration parts, you MUST also include an image URL for the video background.
-    Format the image URL EXACTLY like this: [IMAGE_URL: https://example.com/image.jpg].
-    Place this [IMAGE_URL: ...] tag at the BEGINNING of each narrative segment.
-    If you cannot find a specific image, use a relevant Wikipedia image URL from your search.
-    
-    The narration should be engaging, educational, and flow naturally between tracks.
-    Do not output just the list. Output the full narrated script.
-    """
+    try:
+        with open(instruction_path, "r") as f:
+            system_message_template = f.read()
+    except FileNotFoundError:
+        print(f"Warning: Instruction file {instruction_path} not found. Using default.")
+        default_path = os.path.join(current_dir, "instructions", "default.md")
+        with open(default_path, "r") as f:
+            system_message_template = f.read()
+            
+    system_message = system_message_template.format(topic=topic, num_songs=num_songs)
     
     user_query = f"Create the curated playlist for {topic}"
     full_prompt_text = f"SYSTEM:\n{system_message}\n\nUSER:\n{user_query}"
@@ -100,6 +98,11 @@ def curate_playlist_node(state: AgentState):
     
     # Save the response
     with open(response_file, "w") as f:
+        f.write(content)
+        
+    # Also save as script.txt for easier user access (as per previous main.py behavior)
+    script_file = os.path.join(playlist_dir, "script.txt")
+    with open(script_file, "w") as f:
         f.write(content)
     
     print(f"✨ Curation Complete! Script length: {len(content)} characters")
@@ -238,6 +241,11 @@ def verify_curation_node(state: AgentState):
         segment_visual_prompts.append(final_image_url)
     
     print(f"✨ Verification Complete! Found {len(verified_tracks)} tracks, {len(narrative_segments)} narrative segments, and {len(segment_visual_prompts)} image URLs.")
+
+    # Save verified tracks
+    with open(tracks_file, "w") as f:
+        json.dump(verified_tracks, f, indent=2)
+    print(f"Verified tracks saved to: {tracks_file}")
     
     return {
         "narrative_segments": narrative_segments,
