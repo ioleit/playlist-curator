@@ -5,7 +5,10 @@ import re
 from urllib.parse import unquote
 from googleapiclient.discovery import build
 # Reuse authentication and helper from existing script
-from update_youtube_playlist import get_authenticated_service, get_wikimedia_attribution
+try:
+    from .update_youtube_playlist import get_authenticated_service, get_wikimedia_attribution
+except ImportError:
+    from yt_music.update_youtube_playlist import get_authenticated_service, get_wikimedia_attribution
 
 def get_playlist_id_by_name(youtube, channel_id, playlist_name):
     print(f"Searching for playlist '{playlist_name}' in channel '{channel_id}'...")

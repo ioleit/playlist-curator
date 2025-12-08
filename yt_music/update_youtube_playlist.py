@@ -37,6 +37,64 @@ def get_authenticated_service():
 
     return build('youtube', 'v3', credentials=creds)
 
+def get_wikimedia_attribution(filename):
+    """
+    Fetch author, license, and source url from Wikimedia Commons for a given filename.
+    """
+    # Clean filename (remove file:// prefix if present)
+    if filename.startswith('file://'):
+        filename = filename.replace('file://', '')
+    
+    # Extract just the name if it's a path
+    filename = os.path.basename(filename)
+    
+    print(f"    🔍 Searching Wikimedia for: {filename}...")
+    
+    url = "https://commons.wikimedia.org/w/api.php"
+    params = {
+        "action": "query",
+        "titles": f"File:{filename}",
+        "prop": "imageinfo",
+        "iiprop": "extmetadata",
+        "format": "json"
+    }
+    headers = {
+        'User-Agent': 'PlaylistCurator/1.0 (https://github.com/yourusername/playlist-curator; contact@example.com)'
+    }
+    
+    try:
+        resp = requests.get(url, params=params, headers=headers).json()
+        
+        # Handle case where response might be empty or invalid structure
+        if 'query' not in resp:
+            print("      ⚠️ Unexpected API response format.")
+            return None
+            
+        pages = resp['query']['pages']
+        page_id = next(iter(pages))
+        
+        if page_id == "-1":
+             print("      ⚠️ Image not found on Wikimedia Commons.")
+             return None
+             
+        metadata = pages[page_id]['imageinfo'][0]['extmetadata']
+        
+        # Clean HTML tags from values
+        def clean_html(raw_html):
+            cleanr = re.compile('<.*?>')
+            return re.sub(cleanr, '', raw_html)
+
+        artist = clean_html(metadata.get('Artist', {}).get('value', 'Unknown'))
+        license_name = metadata.get('LicenseShortName', {}).get('value', 'Unknown License')
+        license_url = metadata.get('LicenseUrl', {}).get('value', '')
+        source_url = f"https://commons.wikimedia.org/wiki/File:{filename.replace(' ', '_')}"
+        
+        return f"\n\nImage Credit:\nTitle: {filename}\nAuthor: {artist}\nSource: {source_url}\nLicense: {license_name} {license_url}"
+        
+    except Exception as e:
+        print(f"      ⚠️ Error fetching attribution: {e}")
+        return None
+
 def update_playlist_metadata(youtube, playlist_id, title, description):
     """
     Updates the playlist title, description, and ensures manual ordering.

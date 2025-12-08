@@ -68,7 +68,7 @@ Since the YouTube API has strict limits on video uploads, upload the generated c
 4.  **Sync Local Data:** Run the post-upload tool.
 
 ```bash
-python yt_music/post_upload.py data/playlists/my_new_playlist --playlist-id PLxyz
+python -m yt_music.post_upload data/playlists/my_new_playlist --playlist-id PLxyz
 ```
 
 This creates `youtube_playlists.json` in your playlist folder—a "master plan" interleaving narration and songs.
@@ -77,5 +77,5 @@ This creates `youtube_playlists.json` in your playlist folder—a "master plan" 
 This executes the plan, organizing the YouTube playlist.
 
 ```bash
-python yt_music/update_youtube_playlist.py data/playlists/my_new_playlist
+python -m yt_music.update_youtube_playlist data/playlists/my_new_playlist
 ```
