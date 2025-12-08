@@ -11,7 +11,7 @@ class KokoroTTS:
             
         self.kokoro = Kokoro(model_path, voices_path)
 
-    def generate_audio(self, text: str, output_file: str = "output.wav", voice: str = "af_sarah", speed: float = 1.0, lang: str = "en-us"):
+    def generate_audio(self, text: str, output_file: str = "output.wav", voice: str = "af_heart", speed: float = 1.0, lang: str = "en-us"):
         """
         Generates audio from text and saves it to a file.
         

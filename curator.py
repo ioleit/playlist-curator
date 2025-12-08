@@ -2,6 +2,8 @@ import sys
 import json
 import os
 import time
+import argparse
+import shutil
 import pytimeparse
 from langgraph.graph import StateGraph, END
 from core.agent_state import AgentState
@@ -11,26 +13,40 @@ from curation.video_nodes import generate_images_node, create_video_node
 
 # --- Graph Definition ---
 
-def build_workflow():
+def build_workflow(inference_only=False):
     # Build the graph
     builder = StateGraph(AgentState)
 
     # Add nodes
     builder.add_node("curate_playlist", curate_playlist_node)
     builder.add_node("verify_curation", verify_curation_node)
-    builder.add_node("generate_speech", generate_speech_node)
-    builder.add_node("generate_images", generate_images_node)
-    builder.add_node("create_video", create_video_node)
+    
+    # Only add speech and video nodes if not in inference-only mode
+    if not inference_only:
+        builder.add_node("generate_speech", generate_speech_node)
+        builder.add_node("generate_images", generate_images_node)
+        builder.add_node("create_video", create_video_node)
 
     # Set entry point
     builder.set_entry_point("curate_playlist")
 
-    # Linear flow: Curate -> Verify -> Speech -> Images -> Video
-    builder.add_edge("curate_playlist", "verify_curation")
-    builder.add_edge("verify_curation", "generate_speech")
-    builder.add_edge("generate_speech", "generate_images") 
-    builder.add_edge("generate_images", "create_video")
-    builder.add_edge("create_video", END)
+    # Linear flow: Curate -> Verify -> (Maybe Speech -> Images -> Video)
+    if inference_only:
+         builder.add_edge("curate_playlist", "verify_curation")
+         builder.add_edge("verify_curation", END)
+    else:
+        builder.add_edge("curate_playlist", "verify_curation")
+        builder.add_edge("verify_curation", "generate_speech")
+        # Temporarily stopped here in previous edits, but restoring logic for full flow if wanted,
+        # or keeping the shortcut. Let's keep the shortcut logic consistent with previous state
+        # but allow full flow if we wanted to uncomment.
+        
+        # builder.add_edge("generate_speech", "generate_images") 
+        # builder.add_edge("generate_images", "create_video")
+        # builder.add_edge("create_video", END)
+        
+        # Current shortcut: End after speech
+        builder.add_edge("generate_speech", END)
 
     # Compile the graph
     return builder.compile()
@@ -41,10 +57,14 @@ def main():
     start_time = time.time()
     print("🚀 Starting Playlist Curator Workflow...")
 
-    # Default to "example" if no argument provided
-    playlist_name = "example"
-    if len(sys.argv) > 1:
-        playlist_name = sys.argv[1]
+    # Parse arguments
+    parser = argparse.ArgumentParser(description="Playlist Curator Workflow")
+    parser.add_argument("playlist_name", nargs="?", default="example", help="Name of the playlist directory (in data/playlists/)")
+    parser.add_argument("--clean", action="store_true", help="Remove generated files before starting")
+    parser.add_argument("--inference-only", action="store_true", help="Only generate the playlist text/script, skip TTS and video generation")
+    args = parser.parse_args()
+    
+    playlist_name = args.playlist_name
     
     # Construct paths
     base_dir = "data/playlists"
@@ -56,6 +76,38 @@ def main():
         print(f"Error: Playlist directory '{playlist_dir}' not found.")
         print(f"Expected structure: {base_dir}/<name>/config.json")
         sys.exit(1)
+
+    # Handle --clean
+    if args.clean:
+        print(f"⚠️  WARNING: You are about to delete all generated files in '{playlist_dir}'.")
+        print(f"    This will preserve 'config.json' but remove scripts, audio, video, and images.")
+        
+        # Non-interactive mode check could be added here, but user asked for confirmation
+        try:
+            confirm = input("    Are you sure you want to continue? (y/N): ").strip().lower()
+        except EOFError:
+            confirm = 'n' # Safe default for non-interactive
+            
+        if confirm != 'y':
+            print("Clean cancelled.")
+            sys.exit(0)
+        
+        # Perform clean
+        print(f"Cleaning '{playlist_dir}'...")
+        count = 0
+        for filename in os.listdir(playlist_dir):
+            if filename != "config.json":
+                file_path = os.path.join(playlist_dir, filename)
+                try:
+                    if os.path.isfile(file_path) or os.path.islink(file_path):
+                        os.unlink(file_path)
+                        count += 1
+                    elif os.path.isdir(file_path):
+                        shutil.rmtree(file_path)
+                        count += 1
+                except Exception as e:
+                    print(f"  Failed to delete {filename}. Reason: {e}")
+        print(f"Clean complete. Removed {count} items.\n")
         
     # Load config
     try:
@@ -66,6 +118,8 @@ def main():
         sys.exit(1)
 
     topic = request_config.get("topic", "Artificial Intelligence")
+    if isinstance(topic, list):
+        topic = " ".join(topic)
     system_prompt = request_config.get("system_prompt", "default")
     duration_str = request_config.get("duration", "30m") # Default to 30m if not specified
 
@@ -82,6 +136,8 @@ def main():
     print(f"Running workflow for playlist: {playlist_name}")
     print(f"Topic: {topic}")
     print(f"Output directory: {playlist_dir}")
+    if args.inference_only:
+        print("Mode: Inference Only (No Audio/Video Generation)")
     
     initial_state = {
         "topic": topic,
@@ -94,7 +150,7 @@ def main():
     
     # Run the graph
     print("Building workflow graph...")
-    app = build_workflow()
+    app = build_workflow(inference_only=args.inference_only)
     print("Executing workflow...")
     result = app.invoke(initial_state)
     
@@ -120,4 +176,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

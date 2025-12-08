@@ -196,14 +196,6 @@ def main():
     # Removed playlist_id argument as it comes from json now
     args = parser.parse_args()
     
-    # Load global config for podcast playlist
-    global_config = {}
-    if os.path.exists("config.json"):
-        with open("config.json", "r") as f:
-            global_config = json.load(f)
-            
-    podcast_playlist_id = global_config.get("podcast_playlist_id")
-    
     playlist_dir = args.playlist_dir
     json_path = os.path.join(playlist_dir, "youtube_playlists.json")
     
@@ -240,17 +232,6 @@ def main():
         except Exception as e:
             print(f"  Failed to delete item {item['id']}: {e}")
 
-    # Pre-fetch podcast playlist items if configured
-    podcast_video_ids = set()
-    if podcast_playlist_id:
-        print(f"Fetching podcast playlist ({podcast_playlist_id}) items...")
-        try:
-            p_items = get_playlist_items(youtube, podcast_playlist_id)
-            for item in p_items:
-                podcast_video_ids.add(item['contentDetails']['videoId'])
-        except Exception as e:
-             print(f"⚠️ Error fetching podcast playlist: {e}")
-
     # 3. Rebuild from JSON
     print("Rebuilding playlist...")
     items = playlist_data.get("items", [])
@@ -285,31 +266,6 @@ def main():
             # It's a narration part (or something we want to update)
             # Note: The title in JSON includes "Part N: Topic", which is what we want.
             update_video_metadata(youtube, vid_id, item['title'], description)
-
-            # 5. Add to Global Podcast Playlist
-            if podcast_playlist_id:
-                if vid_id not in podcast_video_ids:
-                    print(f"  🎙️ Adding narration to global podcast playlist...")
-                    try:
-                        youtube.playlistItems().insert(
-                            part="snippet",
-                            body={
-                                "snippet": {
-                                    "playlistId": podcast_playlist_id,
-                                    "resourceId": {
-                                        "kind": "youtube#video",
-                                        "videoId": vid_id
-                                    }
-                                }
-                            }
-                        ).execute()
-                        podcast_video_ids.add(vid_id) # Update local set
-                        print("    ✅ Added.")
-                    except Exception as e:
-                        print(f"    ❌ Failed to add to podcast playlist: {e}")
-                else:
-                    print(f"  🎙️ Narration already in global podcast playlist.")
-
 
     print("\n🎉 Playlist update complete!")
 

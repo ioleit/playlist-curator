@@ -4,9 +4,10 @@ import re
 from langchain_openai import ChatOpenAI
 from langgraph.prebuilt import create_react_agent
 from langchain_core.messages import HumanMessage
+from langchain_core.callbacks import StdOutCallbackHandler
 from ytmusicapi import YTMusic
 from core.agent_state import AgentState
-from .tools import search_youtube_music
+from .tools import search_youtube_music, search_musicbrainz, search_google
 from .image_tools import search_wikipedia_images
 
 def curate_playlist_node(state: AgentState):
@@ -86,17 +87,22 @@ def curate_playlist_node(state: AgentState):
     llm = ChatOpenAI(
         model=model_name,
         openai_api_key=api_key,
-        openai_api_base="https://openrouter.ai/api/v1"
+        openai_api_base="https://openrouter.ai/api/v1",
+        streaming=True,
+        verbose=True
     )
     
-    tools = [search_youtube_music, search_wikipedia_images]
+    tools = [search_youtube_music, search_wikipedia_images, search_musicbrainz, search_google]
     
     # Create the agent
     agent = create_react_agent(llm, tools, prompt=system_message)
     
     print(f"🤖 Consulting LLM Curator Agent for '{topic}'...")
     # Run the agent
-    result = agent.invoke({"messages": [HumanMessage(content=user_query)]})
+    result = agent.invoke(
+        {"messages": [HumanMessage(content=user_query)]},
+        config={"callbacks": [StdOutCallbackHandler()]}
+    )
     
     # Extract the final response
     last_message = result["messages"][-1]
