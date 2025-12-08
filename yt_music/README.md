@@ -51,13 +51,13 @@ Go to [YouTube Studio](https://studio.youtube.com/) and create a new **Private o
 This script matches your uploaded videos with your generated script and tracks to build the final playlist structure.
 
 ```bash
-# Usage: python3 -m yt_music.post_upload <playlist_dir>
+# Usage: python3 -m yt_music.post_upload <playlist_dir> --playlist-id <Manual_Playlist_ID>
 
-python3 -m yt_music.post_upload data/playlists/space_jazz
+python3 -m yt_music.post_upload data/playlists/space_jazz --playlist-id PLx4...
 ```
 
 *   **What it does:**
-    *   Finds the uploads in the playlist matching the **topic** in your `config.json` (e.g. "Space Jazz").
+    *   Finds the uploads in the specified playlist.
     *   Generates `youtube_playlists.json` in your playlist folder.
     *   Constructs rich descriptions with transcript, links, and attribution.
 

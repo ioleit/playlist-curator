@@ -38,7 +38,7 @@ def get_all_playlist_items(youtube, playlist_id):
 def main():
     parser = argparse.ArgumentParser(description="Build youtube_playlists.json from uploaded clips and config.")
     parser.add_argument("playlist_dir", help="Path to the playlist directory (e.g. data/playlists/space_jazz)")
-    parser.add_argument("--playlist-id", help="Directly provide Playlist ID (skips search)", required=False)
+    parser.add_argument("--playlist-id", help="The ID of the manual playlist containing your uploads", required=True)
     args = parser.parse_args()
 
     playlist_dir = args.playlist_dir
@@ -84,14 +84,8 @@ def main():
     
     playlist_id = args.playlist_id
     if not playlist_id:
-        # Search for the playlist by topic name
-        search_title = playlist_config.get("topic", "Curated Playlist")
-        print(f"Searching for playlist matching topic: '{search_title}'...")
-             
-        playlist_id = get_playlist_id_by_name(youtube, channel_id, search_title)
-        if not playlist_id:
-            print(f"Error: Playlist '{search_title}' not found in channel {channel_id}.")
-            return
+        print("Error: Must provide --playlist-id")
+        return
     
     print(f"Found playlist ID: {playlist_id}")
 

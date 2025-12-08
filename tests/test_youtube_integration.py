@@ -45,7 +45,7 @@ class TestPostUpload(unittest.TestCase):
         mock_get_playlist_id.return_value = "PL_TEST_123"
         
         # Mock sys.argv
-        with patch.object(sys, 'argv', ['post_upload.py', self.mock_playlist_dir]):
+        with patch.object(sys, 'argv', ['post_upload.py', self.mock_playlist_dir, '--playlist-id', 'PL_TEST_123']):
             # Mock get_all_playlist_items to return some uploaded parts
             mock_youtube = MagicMock()
             mock_get_auth.return_value = mock_youtube

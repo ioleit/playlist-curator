@@ -37,16 +37,12 @@ def build_workflow(inference_only=False):
     else:
         builder.add_edge("curate_playlist", "verify_curation")
         builder.add_edge("verify_curation", "generate_speech")
-        # Temporarily stopped here in previous edits, but restoring logic for full flow if wanted,
-        # or keeping the shortcut. Let's keep the shortcut logic consistent with previous state
-        # but allow full flow if we wanted to uncomment.
-        
-        # builder.add_edge("generate_speech", "generate_images") 
-        # builder.add_edge("generate_images", "create_video")
-        # builder.add_edge("create_video", END)
-        
-        # Current shortcut: End after speech
-        builder.add_edge("generate_speech", END)
+        # Go from Speech to Images
+        builder.add_edge("generate_speech", "generate_images")
+        # Go from Images to Video
+        builder.add_edge("generate_images", "create_video")
+        # End after Video
+        builder.add_edge("create_video", END)
 
     # Compile the graph
     return builder.compile()

@@ -24,7 +24,9 @@ def generate_images_node(state: AgentState):
             img = Image.new('RGB', (1920, 1080), color = (73, 109, 137))
             img.save(placeholder_path)
         except ImportError:
-            pass
+            print("❌ Error: Pillow library not found. Cannot create placeholder image.")
+            print("   Please install it using: pip install Pillow")
+            print("   Without an image, video generation will be skipped.")
 
     downloaded_images = []
     
@@ -99,6 +101,9 @@ def create_video_node(state: AgentState):
     if not playlist_name:
         playlist_name = "playlist"
 
+    from speech_to_video.video_creator import VideoCreator
+    creator = VideoCreator(output_dir=playlist_dir)
+
     for i, audio_path in enumerate(audio_paths):
         if not os.path.exists(audio_path):
             continue
@@ -112,33 +117,27 @@ def create_video_node(state: AgentState):
              video_paths.append(output_path)
              continue
 
-        # Look for specific image first, then placeholder
+        # Look for specific image first
         image_path = os.path.join(playlist_dir, f"image_{i+1:03d}.jpg")
-        if not os.path.exists(image_path) or os.path.getsize(image_path) == 0:
-             image_path = os.path.join(playlist_dir, "placeholder.jpg")
-             
-        if not os.path.exists(image_path):
-            print(f"  ⚠️ No image found for segment {i+1}. Skipping.")
-            continue
-
-        # ffmpeg command to combine audio and image
-        # Forces 1920x1080 (16:9) landscape to avoid YouTube Shorts classification
-        # Scales image to fit and pads with black bars if necessary
-        cmd = (
-            f"{ffmpeg_cmd} -y -loop 1 -i '{image_path}' -i '{audio_path}' "
-            f"-c:v libx264 -c:a aac -b:a 192k -pix_fmt yuv420p "
-            f"-vf 'scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,setsar=1' "
-            f"-shortest '{output_path}' > /dev/null 2>&1"
+        
+        # If specific image exists, use it with no waveform (or whatever default behavior)
+        # If not, pass None so VideoCreator finds the background.png and uses waveform
+        if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
+            pass # image_path is valid
+        else:
+            image_path = None # Trigger fallback in VideoCreator
+            
+        result_path = creator.create_video(
+            audio_path=audio_path, 
+            image_path=image_path, 
+            output_filename=filename,
+            use_waveform=(image_path is None) # Force waveform if falling back
         )
         
-        print(f"  - Rendering {filename}...")
-        ret = os.system(cmd)
-        
-        if ret == 0:
-            video_paths.append(output_path)
-        else:
-            print(f"    ❌ FFmpeg failed for {filename}. (Command: {cmd})")
+        if result_path:
+            video_paths.append(result_path)
             
     print(f"✅ Created {len(video_paths)} video files.")
     
     return {"video_paths": video_paths}
+

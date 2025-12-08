@@ -37,64 +37,6 @@ def get_authenticated_service():
 
     return build('youtube', 'v3', credentials=creds)
 
-def get_wikimedia_attribution(filename):
-    """
-    Fetch author, license, and source url from Wikimedia Commons for a given filename.
-    """
-    # Clean filename (remove file:// prefix if present)
-    if filename.startswith('file://'):
-        filename = filename.replace('file://', '')
-    
-    # Extract just the name if it's a path
-    filename = os.path.basename(filename)
-    
-    print(f"    🔍 Searching Wikimedia for: {filename}...")
-    
-    url = "https://commons.wikimedia.org/w/api.php"
-    params = {
-        "action": "query",
-        "titles": f"File:{filename}",
-        "prop": "imageinfo",
-        "iiprop": "extmetadata",
-        "format": "json"
-    }
-    headers = {
-        'User-Agent': 'PlaylistCurator/1.0 (https://github.com/yourusername/playlist-curator; contact@example.com)'
-    }
-    
-    try:
-        resp = requests.get(url, params=params, headers=headers).json()
-        
-        # Handle case where response might be empty or invalid structure
-        if 'query' not in resp:
-            print("      ⚠️ Unexpected API response format.")
-            return None
-            
-        pages = resp['query']['pages']
-        page_id = next(iter(pages))
-        
-        if page_id == "-1":
-             print("      ⚠️ Image not found on Wikimedia Commons.")
-             return None
-             
-        metadata = pages[page_id]['imageinfo'][0]['extmetadata']
-        
-        # Clean HTML tags from values
-        def clean_html(raw_html):
-            cleanr = re.compile('<.*?>')
-            return re.sub(cleanr, '', raw_html)
-
-        artist = clean_html(metadata.get('Artist', {}).get('value', 'Unknown'))
-        license_name = metadata.get('LicenseShortName', {}).get('value', 'Unknown License')
-        license_url = metadata.get('LicenseUrl', {}).get('value', '')
-        source_url = f"https://commons.wikimedia.org/wiki/File:{filename.replace(' ', '_')}"
-        
-        return f"\n\nImage Credit:\nTitle: {filename}\nAuthor: {artist}\nSource: {source_url}\nLicense: {license_name} {license_url}"
-        
-    except Exception as e:
-        print(f"      ⚠️ Error fetching attribution: {e}")
-        return None
-
 def update_playlist_metadata(youtube, playlist_id, title, description):
     """
     Updates the playlist title, description, and ensures manual ordering.
@@ -121,7 +63,7 @@ def update_video_metadata(youtube, video_id, title, description, attribution="")
     """
     Updates the title, description, and status (unlisted, not for kids, music category) of a video.
     """
-    print(f"  📝 Updating metadata for {video_id}...")
+    # print(f"  📝 Updating metadata for {video_id}...")
     
     final_description = description
     if attribution:
@@ -143,9 +85,9 @@ def update_video_metadata(youtube, video_id, title, description, attribution="")
                 }
             }
         ).execute()
-        print("    ✅ Metadata and status updated (Unlisted, Not Made for Kids, Music).")
+        # print("    ✅ Metadata updated.")
     except Exception as e:
-        print(f"    ❌ Failed to update metadata: {e}")
+        print(f"    ❌ Failed to update metadata for {video_id}: {e}")
 
 def get_playlist_items(youtube, playlist_id):
     """
@@ -163,37 +105,9 @@ def get_playlist_items(youtube, playlist_id):
         request = youtube.playlistItems().list_next(request, response)
     return items
 
-def insert_song_after(youtube, playlist_id, video_id_to_insert, position):
-    """
-    Inserts a video at a specific position in the playlist.
-    """
-    print(f"  ➕ Inserting song {video_id_to_insert} at pos {position}...")
-    try:
-        youtube.playlistItems().insert(
-            part="snippet",
-            body={
-                "snippet": {
-                    "playlistId": playlist_id,
-                    "position": position,
-                    "resourceId": {
-                        "kind": "youtube#video",
-                        "videoId": video_id_to_insert
-                    }
-                }
-            }
-        ).execute()
-        print("    ✅ Song inserted.")
-    except Exception as e:
-        if "manualSortRequired" in str(e):
-            print("    ❌ Failed to insert song: Playlist must be set to 'Manual' sorting in YouTube.")
-            print("       ACTION: Go to YouTube -> Playlist -> Sort -> Manual (or drag a video).")
-        else:
-            print(f"    ❌ Failed to insert song: {e}")
-
 def main():
     parser = argparse.ArgumentParser(description="Update playlist from youtube_playlists.json")
     parser.add_argument("playlist_dir", help="Path to the playlist directory (e.g. data/playlists/space_jazz)")
-    # Removed playlist_id argument as it comes from json now
     args = parser.parse_args()
     
     # Load global config for podcast playlist
@@ -236,9 +150,9 @@ def main():
     for item in current_items:
         try:
             youtube.playlistItems().delete(id=item['id']).execute()
-            print(f"  Deleted item {item['id']}")
+            # print(f"  Deleted item {item['id']}")
         except Exception as e:
-            print(f"  Failed to delete item {item['id']}: {e}")
+            print(f"  ❌ Failed to delete item {item['id']}: {e}")
 
     # Pre-fetch podcast playlist items if configured
     podcast_video_ids = set()
@@ -255,63 +169,61 @@ def main():
     print("Rebuilding playlist...")
     items = playlist_data.get("items", [])
     
+    print(f"  Adding {len(items)} items to playlist...")
     for i, item in enumerate(items):
         vid_id = item['video_id']
         kind = item.get("kind", "video")
-        print(f"  Adding {kind} ({i+1}/{len(items)}): {item.get('title', vid_id)}")
         
-        body = {
-            "snippet": {
-                "playlistId": playlist_id,
-                "resourceId": {
-                    "kind": "youtube#video",
-                    "videoId": vid_id
+        # Add to main playlist (Sequential)
+        try:
+            body = {
+                "snippet": {
+                    "playlistId": playlist_id,
+                    "resourceId": {
+                        "kind": "youtube#video",
+                        "videoId": vid_id
+                    }
                 }
             }
-        }
-        
-        try:
+            # Position is implicitly "end of playlist", which preserves order during sequential insert
             youtube.playlistItems().insert(
                 part="snippet",
                 body=body
             ).execute()
+            print(f"    ✅ Added {kind}: {item.get('title', vid_id)}")
         except Exception as e:
-            print(f"  ❌ Failed to add item: {e}")
-            continue
+            print(f"    ❌ Failed to add item {vid_id}: {e}")
             
-        # 4. Update Video Metadata if needed (Narration)
+        # 4. Update Video Metadata if needed
         description = item.get("description")
         if description:
-            # It's a narration part (or something we want to update)
-            # Note: The title in JSON includes "Part N: Topic", which is what we want.
             update_video_metadata(youtube, vid_id, item['title'], description)
 
-            # 5. Add to Global Podcast Playlist
-            if podcast_playlist_id:
-                if vid_id not in podcast_video_ids:
-                    print(f"  🎙️ Adding narration to global podcast playlist...")
-                    try:
-                        youtube.playlistItems().insert(
-                            part="snippet",
-                            body={
-                                "snippet": {
-                                    "playlistId": podcast_playlist_id,
-                                    "resourceId": {
-                                        "kind": "youtube#video",
-                                        "videoId": vid_id
-                                    }
-                                }
+        # 5. Add to Global Podcast Playlist (Narrations ONLY)
+        if podcast_playlist_id and kind == "narration":
+            if vid_id not in podcast_video_ids:
+                print(f"    🎙️ Adding narration {vid_id} to global podcast playlist...")
+                try:
+                    podcast_body = {
+                        "snippet": {
+                            "playlistId": podcast_playlist_id,
+                            "resourceId": {
+                                "kind": "youtube#video",
+                                "videoId": vid_id
                             }
-                        ).execute()
-                        podcast_video_ids.add(vid_id) # Update local set
-                        print("    ✅ Added.")
-                    except Exception as e:
-                        print(f"    ❌ Failed to add to podcast playlist: {e}")
-                else:
-                    print(f"  🎙️ Narration already in global podcast playlist.")
-
+                        }
+                    }
+                    youtube.playlistItems().insert(
+                        part="snippet",
+                        body=podcast_body
+                    ).execute()
+                    podcast_video_ids.add(vid_id)
+                    print("      ✅ Added to podcast playlist.")
+                except Exception as e:
+                    print(f"      ❌ Failed to add to podcast playlist: {e}")
 
     print("\n🎉 Playlist update complete!")
 
 if __name__ == "__main__":
     main()
+
