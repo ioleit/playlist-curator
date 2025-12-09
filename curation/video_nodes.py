@@ -3,14 +3,16 @@ import requests
 import shutil
 import json
 from core.agent_state import AgentState
+from core.config import get_playlist_dir, playlist_path
 
 def generate_images_node(state: AgentState):
     """
     Downloads images from the URLs provided in curated_playlist.json.
     Falls back to placeholder if download fails.
     """
-    playlist_dir = state.get("playlist_dir", "data")
-    curated_json_path = os.path.join(playlist_dir, "curated_playlist.json")
+    playlist_id = state["playlist_id"]
+    playlist_dir = get_playlist_dir(playlist_id)
+    curated_json_path = playlist_path(playlist_id, "curated_playlist.json")
     
     if not os.path.exists(curated_json_path):
         print(f"❌ Error: {curated_json_path} not found. Cannot download images.")
@@ -33,7 +35,7 @@ def generate_images_node(state: AgentState):
     print(f"🖼️  Processing images for {len(narrative_items)} segments...")
     
     # Ensure we have a default placeholder just in case
-    placeholder_path = os.path.join(playlist_dir, "placeholder.jpg")
+    placeholder_path = playlist_path(playlist_id, "placeholder.jpg")
     if not os.path.exists(placeholder_path):
         try:
             from PIL import Image
@@ -60,7 +62,7 @@ def generate_images_node(state: AgentState):
              continue
              
         base_name = os.path.splitext(audio_filename)[0]
-        target_path = os.path.join(playlist_dir, f"{base_name}.jpg")
+        target_path = playlist_path(playlist_id, f"{base_name}.jpg")
         
         # Check if already downloaded to save time
         if os.path.exists(target_path) and os.path.getsize(target_path) > 0:
@@ -91,8 +93,9 @@ def create_video_node(state: AgentState):
     Takes audio files and downloaded images to create video files.
     Uses FFmpeg for Ken Burns effect or simple static image.
     """
-    playlist_dir = state.get("playlist_dir", "data")
-    curated_json_path = os.path.join(playlist_dir, "curated_playlist.json")
+    playlist_id = state.get("playlist_id", "example")
+    playlist_dir = get_playlist_dir(playlist_id)
+    curated_json_path = playlist_path(playlist_id, "curated_playlist.json")
     
     if not os.path.exists(curated_json_path):
         print(f"❌ Error: {curated_json_path} not found. Cannot create videos.")
@@ -137,8 +140,8 @@ def create_video_node(state: AgentState):
             print(f"  ❌ Error: Missing filename config for item {i}")
             continue
             
-        audio_path = os.path.join(playlist_dir, audio_filename)
-        output_path = os.path.join(playlist_dir, video_filename)
+        audio_path = playlist_path(playlist_id, audio_filename)
+        output_path = playlist_path(playlist_id, video_filename)
         
         if not os.path.exists(audio_path):
             print(f"  ⚠️ Audio missing: {audio_filename}. Skipping.")
@@ -153,7 +156,7 @@ def create_video_node(state: AgentState):
         # Look for specific image first
         # We assume image has same base name as audio/video but .jpg
         base_name = os.path.splitext(audio_filename)[0]
-        image_path = os.path.join(playlist_dir, f"{base_name}.jpg")
+        image_path = playlist_path(playlist_id, f"{base_name}.jpg")
         
         # If specific image exists, use it
         # If not, pass None so VideoCreator finds the background.png and uses waveform

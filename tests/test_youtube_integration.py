@@ -33,12 +33,17 @@ class TestPostUpload(unittest.TestCase):
         with open("config.json", "w") as f:
             json.dump({
                 "channel_id": "test_channel_id",
-                "topic": "Test Topic"
+                "topic": "Test Topic",
+                "model": "google/gemini-2.0-flash-exp:free"
             }, f)
             
         # Create playlist config.json
         with open(os.path.join(self.playlist_dir, "config.json"), "w") as f:
-            json.dump({"topic": "Jazz"}, f)
+            json.dump({
+                "topic": "Jazz",
+                "duration": "15m",
+                "system_prompt": "default"
+            }, f)
             
         # Create curated_playlist.json
         self.mock_curated_data = {
@@ -178,9 +183,11 @@ class TestUpdatePlaylist(unittest.TestCase):
         # curated_playlist.json (input for update script)
         playlist_data = {
             "playlist_id": "PL_CURATED",
+            "title": "Test Curated",
+            "topic": "Test Topic",
             "items": [
-                {"video_id": "vid1", "kind": "narration", "title": "Part 1", "description": "Desc 1"},
-                {"video_id": "song1", "kind": "song", "title": "Song 1"}
+                {"type": "narrative", "video_id": "vid1", "kind": "narration", "title": "Part 1", "description": "Desc 1"},
+                {"type": "track", "video_id": "song1", "kind": "song", "title": "Song 1", "artist": "Artist 1", "duration": 180}
             ]
         }
         with open(os.path.join(self.playlist_dir, "curated_playlist.json"), "w") as f:

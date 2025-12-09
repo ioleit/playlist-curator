@@ -1,13 +1,30 @@
 import unittest
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch
 import json
 import os
+import shutil
+import tempfile
 from curation.nodes import verify_curation_node
 
 class TestVerifyCuration(unittest.TestCase):
 
     def setUp(self):
         self.maxDiff = None
+        self.temp_dir = tempfile.mkdtemp()
+        self.original_cwd = os.getcwd()
+        os.chdir(self.temp_dir)
+
+        self.playlist_id = "test_playlist"
+        self.playlist_dir = os.path.join("data", "playlists", self.playlist_id)
+        os.makedirs(self.playlist_dir, exist_ok=True)
+
+        with open(os.path.join(self.playlist_dir, "config.json"), "w") as f:
+            json.dump({
+                "topic": "Test Topic",
+                "duration": "15m",
+                "system_prompt": "default"
+            }, f)
+
         self.sample_script = """
 [TITLE: Test Playlist Title]
 
@@ -22,16 +39,16 @@ This is the second segment.
 Outro text.
 """
         self.state = {
-            "playlist_dir": "/tmp/test_playlist",
-            "raw_script": self.sample_script,
-            "topic": "Test Topic"
+            "playlist_id": self.playlist_id,
+            "raw_script": self.sample_script
         }
 
+    def tearDown(self):
+        os.chdir(self.original_cwd)
+        shutil.rmtree(self.temp_dir)
+
     @patch("curation.nodes.YTMusic")
-    @patch("curation.nodes.json.dump")
-    @patch("builtins.open", new_callable=mock_open)
-    @patch("os.path.join", side_effect=lambda *args: "/".join(args))
-    def test_verify_curation_structure(self, mock_path_join, mock_file, mock_json_dump, MockYTMusic):
+    def test_verify_curation_structure(self, MockYTMusic):
         # Setup YTMusic mock
         mock_yt = MockYTMusic.return_value
         mock_yt.get_song.side_effect = [
@@ -56,19 +73,7 @@ Outro text.
         # Run the function
         result = verify_curation_node(self.state)
 
-        # Retrieve the data passed to json.dump for curated_playlist.json
-        # We expect json.dump to be called twice: once for playlist.md (wait no, playlist.md is write), 
-        # once for curated_playlist.json, and once for tracks.json.
-        # Let's filter for the one that looks like our playlist structure.
-        
-        curated_data = None
-        for call in mock_json_dump.call_args_list:
-            data = call[0][0]
-            if "items" in data and "title" in data:
-                curated_data = data
-                break
-        
-        self.assertIsNotNone(curated_data, "curated_playlist.json structure not passed to json.dump")
+        curated_data = result["curated_playlist"]
 
         # 1. Check Top Level Fields
         self.assertEqual(curated_data["title"], "Test Playlist Title")

@@ -169,24 +169,25 @@ def main():
     args = parser.parse_args()
     
     # Load global config for podcast playlist
-    global_config = {}
-    if os.path.exists("config.json"):
-        with open("config.json", "r") as f:
-            global_config = json.load(f)
+    from core.config import GlobalConfig
+    from core.models.playlist import CuratedPlaylist
+    try:
+        global_config = GlobalConfig.load()
+    except Exception as e:
+        print(f"Error loading global config: {e}")
+        return
             
-    podcast_playlist_id = global_config.get("podcast_playlist_id")
+    podcast_playlist_id = global_config.podcast_playlist_id
     
     playlist_dir = args.playlist_dir
-    json_path = os.path.join(playlist_dir, "curated_playlist.json")
     
-    if not os.path.exists(json_path):
-        print(f"❌ Error: {json_path} not found. Run post_upload.py first.")
+    try:
+        curated_playlist = CuratedPlaylist.load(playlist_dir)
+    except Exception as e:
+        print(f"Error loading curated playlist: {e}")
         return
-        
-    with open(json_path, "r") as f:
-        playlist_data = json.load(f)
-        
-    playlist_id = playlist_data.get("playlist_id")
+
+    playlist_id = curated_playlist.playlist_id
     if not playlist_id:
         print("❌ Error: No playlist_id in curated_playlist.json. Did you run post_upload.py?")
         return
@@ -196,8 +197,8 @@ def main():
         return
         
     # 1. Update Playlist Metadata
-    title = playlist_data.get("playlist_title", "Curated Playlist")
-    desc = playlist_data.get("playlist_description", "")
+    title = curated_playlist.playlist_title or "Curated Playlist"
+    desc = curated_playlist.playlist_description or ""
     update_playlist_metadata(youtube, playlist_id, title, desc)
     
     # 2. Clear Playlist
@@ -225,12 +226,16 @@ def main():
 
     # 3. Rebuild from JSON
     print("Rebuilding playlist...")
-    items = playlist_data.get("items", [])
+    items = curated_playlist.items
     
     print(f"  Adding {len(items)} items to playlist...")
     for i, item in enumerate(items):
-        vid_id = item['video_id']
-        kind = item.get("kind", "video")
+        vid_id = item.video_id
+        if not vid_id:
+            print(f"    ⚠️ Skipping item {i}: No video_id found")
+            continue
+            
+        kind = item.kind or "video"
         
         # Add to main playlist (Sequential)
         try:
@@ -248,14 +253,14 @@ def main():
                 part="snippet",
                 body=body
             ).execute()
-            print(f"    ✅ Added {kind}: {item.get('title', vid_id)}")
+            print(f"    ✅ Added {kind}: {item.title or vid_id}")
         except Exception as e:
             print(f"    ❌ Failed to add item {vid_id}: {e}")
             
         # 4. Update Video Metadata if needed
-        description = item.get("description")
+        description = item.description
         if description:
-            update_video_metadata(youtube, vid_id, item['title'], description)
+            update_video_metadata(youtube, vid_id, item.title, description)
 
         # 5. Add to Global Podcast Playlist (Narrations ONLY)
         if podcast_playlist_id and kind == "narration":

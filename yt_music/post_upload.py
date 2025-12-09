@@ -50,36 +50,33 @@ def main():
         return
 
     # Load configs
-    if not os.path.exists("config.json"):
-        print("Error: config.json not found in root.")
-        return
+    from core.config import GlobalConfig, PlaylistConfig
+    from core.models.playlist import CuratedPlaylist
 
-    with open("config.json", "r") as f:
-        global_config = json.load(f)
-    
-    config_path = os.path.join(playlist_dir, "config.json")
-    curated_playlist_path = os.path.join(playlist_dir, "curated_playlist.json")
-
-    if not os.path.exists(config_path):
-        print(f"Error: {config_path} not found.")
+    try:
+        global_config = GlobalConfig.load()
+    except Exception as e:
+        print(f"Error loading global config: {e}")
         return
     
-    with open(config_path, "r") as f:
-        playlist_config = json.load(f)
+    try:
+        playlist_config = PlaylistConfig.load(playlist_dir)
+    except Exception as e:
+        print(f"Error loading playlist config: {e}")
+        return
     
-    if not os.path.exists(curated_playlist_path):
-        print(f"Error: {curated_playlist_path} not found. Please run the curation process first.")
+    try:
+        curated_playlist = CuratedPlaylist.load(playlist_dir)
+    except Exception as e:
+        print(f"Error loading curated playlist: {e}")
         return
 
-    with open(curated_playlist_path, "r") as f:
-        curated_data = json.load(f)
-        
-    items = curated_data.get("items", [])
+    items = curated_playlist.items
     if not items:
         print("Error: curated_playlist.json has no items.")
         return
 
-    channel_id = global_config.get("channel_id")
+    channel_id = global_config.channel_id
     if not channel_id or channel_id == "UC_YOUR_CHANNEL_ID_HERE":
         print("Error: channel_id not set in config.json. Please add your YouTube Channel ID.")
         return
@@ -89,7 +86,8 @@ def main():
         print("Authentication failed.")
         return
 
-    playlist_title = curated_data.get("title", playlist_config.get("topic", "Curated Playlist")) + " (Narrated)"
+    playlist_title = curated_playlist.title or playlist_config.topic
+    playlist_title += " (Narrated)"
     
     playlist_id = args.playlist_id
     if not playlist_id:
@@ -124,11 +122,9 @@ def main():
     narrative_counter = 0
 
     for idx, item in enumerate(items):
-        item_type = item.get("type")
-        
-        if item_type == "narrative":
+        if item.type == "narrative":
             narrative_counter += 1
-            item["kind"] = "narration"
+            item.kind = "narration"
             
             # Find the uploaded video ID for this part
             vid_id = narration_uploads.get(narrative_counter)
@@ -137,24 +133,24 @@ def main():
                 print(f"  Warning: Missing upload for narrative part {narrative_counter}")
                 continue
             
-            item["video_id"] = vid_id
+            item.video_id = vid_id
                 
             # Prepare metadata
-            part_title = f"{curated_data.get('topic', 'Music History')} (Episode {narrative_counter})"
-            item["title"] = part_title # Update title for YouTube
+            part_title = f"{curated_playlist.topic} (Episode {narrative_counter})"
+            item.title = part_title # Update title for YouTube
             
             # Links to prev/next songs
             # Look backwards for previous track
             prev_track = None
             for i in range(idx - 1, -1, -1):
-                if items[i].get("type") == "track":
+                if items[i].type == "track":
                     prev_track = items[i]
                     break
             
             # Look forwards for next track
             next_track = None
             for i in range(idx + 1, len(items)):
-                if items[i].get("type") == "track":
+                if items[i].type == "track":
                     next_track = items[i]
                     break
             
@@ -167,20 +163,20 @@ def main():
             links_block = [intro_note, "", playlist_link]
             
             if prev_track:
-                p_title = prev_track.get('title', 'Previous Song')
-                p_id = prev_track.get('video_id')
+                p_title = prev_track.title or 'Previous Song'
+                p_id = prev_track.video_id
                 links_block.append(f"⏮️ Previous Song: {p_title} (https://youtu.be/{p_id})")
                 
             if next_track:
-                n_title = next_track.get('title', 'Next Song')
-                n_id = next_track.get('video_id')
+                n_title = next_track.title or 'Next Song'
+                n_id = next_track.video_id
                 links_block.append(f"⏭️ Next Song: {n_title} (https://youtu.be/{n_id})")
 
             links_text = "\n".join(links_block)
             
             # Attribution
             footer = ""
-            image_url = item.get("image_url")
+            image_url = item.image_url
             if image_url:
                 filename = image_url.split('/')[-1]
                 filename = unquote(filename)
@@ -189,7 +185,7 @@ def main():
                     footer = "\n\n---\n" + attribution
             
             # Transcript
-            description = item.get("text", "")
+            description = item.text or ""
             
             # Combine
             MAX_LEN = 4800 
@@ -206,23 +202,24 @@ def main():
             
             final_desc += footer
             
-            item["description"] = final_desc
+            item.description = final_desc
             
-        elif item_type == "track":
-            item["kind"] = "song"
+        elif item.type == "track":
+            item.kind = "song"
             # Tracks already have video_id and title
             # description is None or not set, which is fine
 
-    curated_data["playlist_id"] = playlist_id
-    curated_data["playlist_title"] = playlist_title
-    curated_data["playlist_description"] = f"A curated music journey about {curated_data.get('topic')}. Listen to the full experience with narration."
+    curated_playlist.playlist_id = playlist_id
+    curated_playlist.playlist_title = playlist_title
+    curated_playlist.playlist_description = f"A curated music journey about {curated_playlist.topic}. Listen to the full experience with narration."
     
     # Write back to curated_playlist.json
-    with open(curated_playlist_path, "w") as f:
-        json.dump(curated_data, f, indent=4) # Use indent 4 to match common style if needed, or 2
-        
-    print(f"\n✅ Enriched {curated_playlist_path} with YouTube metadata.")
-    print("You can now run the update script to apply these changes.")
+    try:
+        curated_playlist.save(playlist_dir)
+        print(f"\n✅ Enriched curated_playlist.json with YouTube metadata.")
+        print("You can now run the update script to apply these changes.")
+    except Exception as e:
+        print(f"Error saving enriched playlist: {e}")
 
 if __name__ == "__main__":
     main()

@@ -1,5 +1,6 @@
 from .tts import KokoroTTS
 from core.agent_state import AgentState
+from core.config import get_playlist_dir, playlist_path
 import os
 import json
 
@@ -16,8 +17,9 @@ def generate_speech_node(state: AgentState):
     Node that converts the generated text segments to speech files.
     """
     # Load curated playlist from JSON
-    playlist_dir = state.get("playlist_dir", "data")
-    curated_json_path = os.path.join(playlist_dir, "curated_playlist.json")
+    playlist_id = state["playlist_id"]
+    playlist_dir = get_playlist_dir(playlist_id)
+    curated_json_path = playlist_path(playlist_id, "curated_playlist.json")
     
     if not os.path.exists(curated_json_path):
         print(f"❌ Error: {curated_json_path} not found. Cannot generate speech.")
@@ -57,7 +59,7 @@ def generate_speech_node(state: AgentState):
                 print(f"  ❌ Error: Missing audio_filename for segment {i+1}")
                 continue
                 
-            wav_path = os.path.join(playlist_dir, wav_filename)
+            wav_path = playlist_path(playlist_id, wav_filename)
             
             # Check if audio already exists to save time
             if os.path.exists(wav_path) and os.path.getsize(wav_path) > 0:

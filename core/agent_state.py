@@ -1,15 +1,11 @@
-from typing import TypedDict, Optional, List, Any
+from typing import TypedDict, Optional, List
 
-class AgentState(TypedDict):
-    topic: str
-    duration: Optional[str]
-    playlist_dir: str
-    system_prompt: Optional[str]
-    text: Optional[str]              # Deprecated
-    raw_script: Optional[str]        # The original LLM output with [TRACK] tags
-    narrative_segments: List[str]    # List of clean text segments
-    segment_visual_prompts: List[str] # List of image prompts/search queries for each segment
-    verified_tracks: List[dict]      # List of verified track objects
-    playlist_title: Optional[str]    # The generated title for the playlist
-    audio_paths: List[str]           # List of paths to generated audio files
-    video_paths: List[str]           # List of paths to generated video files
+
+class AgentState(TypedDict, total=False):
+    # Core identifiers / flags
+    playlist_id: str
+    skip_validation: bool
+
+    # Curation payload between nodes
+    raw_script: Optional[str]  # The original LLM output with [TRACK] tags
+    curated_playlist: Optional[dict]

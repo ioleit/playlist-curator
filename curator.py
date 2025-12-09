@@ -1,50 +1,38 @@
 import sys
-import json
 import os
 import time
 import argparse
 import shutil
-import pytimeparse
 from langgraph.graph import StateGraph, END
 from core.agent_state import AgentState
 from text_to_speech.nodes import generate_speech_node
 from curation.nodes import curate_playlist_node, verify_curation_node
 from curation.video_nodes import generate_images_node, create_video_node
+from core.config import PlaylistConfig, get_playlist_dir
 
 # --- Graph Definition ---
 
 def build_workflow(inference_only=False):
-    # Build the graph
     builder = StateGraph(AgentState)
 
-    # Add nodes
     builder.add_node("curate_playlist", curate_playlist_node)
     builder.add_node("verify_curation", verify_curation_node)
-    
-    # Only add speech and video nodes if not in inference-only mode
     if not inference_only:
         builder.add_node("generate_speech", generate_speech_node)
         builder.add_node("generate_images", generate_images_node)
         builder.add_node("create_video", create_video_node)
-
-    # Set entry point
     builder.set_entry_point("curate_playlist")
 
-    # Linear flow: Curate -> Verify -> (Maybe Speech -> Images -> Video)
+    builder.add_edge("curate_playlist", "verify_curation")
+
     if inference_only:
-         builder.add_edge("curate_playlist", "verify_curation")
          builder.add_edge("verify_curation", END)
     else:
-        builder.add_edge("curate_playlist", "verify_curation")
         builder.add_edge("verify_curation", "generate_speech")
-        # Go from Speech to Images
         builder.add_edge("generate_speech", "generate_images")
-        # Go from Images to Video
         builder.add_edge("generate_images", "create_video")
-        # End after Video
         builder.add_edge("create_video", END)
 
-    # Compile the graph
     return builder.compile()
 
 # --- Main Execution ---
@@ -55,23 +43,22 @@ def main():
 
     # Parse arguments
     parser = argparse.ArgumentParser(description="Playlist Curator Workflow")
-    parser.add_argument("playlist_name", nargs="?", default="example", help="Name of the playlist directory (in data/playlists/)")
+    parser.add_argument("playlist_id", help="ID/name of the playlist (under data/playlists/)")
     parser.add_argument("--clean", action="store_true", help="Remove generated files before starting")
     parser.add_argument("--inference-only", action="store_true", help="Only generate the playlist text/script, skip TTS and video generation")
     parser.add_argument("--skip-validation", action="store_true", help="Skip checking for prompt equality and re-validating tracks (implies resume)")
     args = parser.parse_args()
     
-    playlist_name = args.playlist_name
+    playlist_id = args.playlist_id
     
     # Construct paths
-    base_dir = "data/playlists"
-    playlist_dir = os.path.join(base_dir, playlist_name)
+    playlist_dir = get_playlist_dir(playlist_id)
     config_path = os.path.join(playlist_dir, "config.json")
     
     # Ensure playlist directory exists
     if not os.path.exists(playlist_dir):
         print(f"Error: Playlist directory '{playlist_dir}' not found.")
-        print(f"Expected structure: {base_dir}/<name>/config.json")
+        print(f"Expected structure: data/playlists/<id>/config.json")
         sys.exit(1)
 
     # Handle --clean
@@ -107,42 +94,23 @@ def main():
         print(f"Clean complete. Removed {count} items.\n")
         
     # Load config
-    try:
-        with open(config_path, "r") as f:
-            request_config = json.load(f)
-    except FileNotFoundError:
-        print(f"Error: Configuration file '{config_path}' not found.")
-        sys.exit(1)
+    playlist_config = PlaylistConfig.load(playlist_dir)
 
-    topic = request_config.get("topic", "Artificial Intelligence")
-    if isinstance(topic, list):
-        topic = " ".join(topic)
-    system_prompt = request_config.get("system_prompt", "default")
-    duration_str = request_config.get("duration", "30m") # Default to 30m if not specified
+    topic = playlist_config.topic
+    system_prompt = playlist_config.system_prompt
+    duration_str = playlist_config.duration
+    seconds = playlist_config.get_duration_seconds()
 
-    if duration_str:
-        seconds = pytimeparse.parse(duration_str)
-        if seconds is None:
-            print(f"Error: Invalid duration format '{duration_str}'")
-            sys.exit(1)
-        if seconds > 3 * 60 * 60: # 3 hours
-            print(f"Error: Duration '{duration_str}' exceeds maximum of 3 hours.")
-            sys.exit(1)
-        print(f"Target Duration: {duration_str} ({seconds} seconds)")
+    print(f"Target Duration: {duration_str} ({seconds} seconds)")
 
-    print(f"Running workflow for playlist: {playlist_name}")
+    print(f"Running workflow for playlist: {playlist_id}")
     print(f"Topic: {topic}")
     print(f"Output directory: {playlist_dir}")
     if args.inference_only:
         print("Mode: Inference Only (No Audio/Video Generation)")
     
     initial_state = {
-        "topic": topic,
-        "duration": duration_str,
-        "playlist_dir": playlist_dir,
-        "system_prompt": system_prompt,
-        "text": None,
-        "audio_path": None,
+        "playlist_id": playlist_id,
         "skip_validation": args.skip_validation
     }
     
@@ -157,20 +125,16 @@ def main():
     print(f"\n✅ Workflow Complete in {duration:.2f} seconds")
     
     # Print summary
-    text = result.get('text')
-    text_preview = text[:200] + "..." if text and len(text) > 200 else text
-    print(f"Generated Text (preview): {text_preview}")
+    raw_script = result.get('raw_script')
+    script_preview = raw_script[:200] + "..." if raw_script and len(raw_script) > 200 else raw_script
+    print(f"Generated Script (preview): {script_preview}")
     
-    audio_paths = result.get('audio_paths', [])
-    video_paths = result.get('video_paths', [])
-    
-    if audio_paths:
-        print(f"\n🎧 Generated {len(audio_paths)} Audio Segments")
-        
-    if video_paths:
-        print(f"\n🎬 Generated {len(video_paths)} Video Segments:")
-        for path in video_paths:
-            print(f"  - {path}")
+    curated = result.get("curated_playlist")
+    if curated:
+        items = curated.get("items", [])
+        narrations = sum(1 for i in items if i.get("type") == "narrative")
+        tracks = sum(1 for i in items if i.get("type") == "track")
+        print(f"\n📄 Curated items -> Narrations: {narrations}, Tracks: {tracks}")
 
 if __name__ == "__main__":
     main()
