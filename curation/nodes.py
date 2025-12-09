@@ -63,12 +63,14 @@ def curate_playlist_node(state: AgentState):
     full_prompt_text = f"SYSTEM:\n{system_message}\n\nUSER:\n{user_query}"
     
     # Check for resumability
+    skip_validation = state.get("skip_validation", False)
     if os.path.exists(prompt_file) and os.path.exists(response_file):
         try:
             with open(prompt_file, "r") as f:
                 cached_prompt = f.read()
             
-            if cached_prompt == full_prompt_text:
+            # If skipping validation, we don't care about prompt equality
+            if skip_validation or cached_prompt == full_prompt_text:
                 print("⏩ Resuming from cached response...")
                 with open(response_file, "r") as f:
                     cached_content = f.read()
@@ -112,11 +114,6 @@ def curate_playlist_node(state: AgentState):
     with open(response_file, "w") as f:
         f.write(content)
         
-    # Also save as script.txt for easier user access (as per previous main.py behavior)
-    script_file = os.path.join(playlist_dir, "script.txt")
-    with open(script_file, "w") as f:
-        f.write(content)
-    
     print(f"✨ Curation Complete! Script length: {len(content)} characters")
     
     return {"text": content, "raw_script": content}
@@ -161,7 +158,7 @@ def verify_curation_node(state: AgentState):
     raw_script = state.get("raw_script") or state.get("text")
     playlist_dir = state.get("playlist_dir", "data")
     config_path = os.path.join(playlist_dir, "config.json")
-    tracks_file = os.path.join(playlist_dir, "tracks.json")
+    skip_validation = state.get("skip_validation", False)
     
     if not raw_script:
         print("⚠️ No script to verify.")
@@ -173,51 +170,18 @@ def verify_curation_node(state: AgentState):
     if title_match:
         playlist_title = title_match.group(1).strip()
         print(f"📝 Found Generated Title: {playlist_title}")
-        
-        # Update config.json with the new title
-        if os.path.exists(config_path):
-            try:
-                with open(config_path, "r") as f:
-                    config = json.load(f)
-                
-                config["topic"] = playlist_title # Update the topic/title
-                
-                with open(config_path, "w") as f:
-                    json.dump(config, f, indent=4)
-                print(f"    ✅ Updated config.json with new title.")
-            except Exception as e:
-                print(f"    ❌ Failed to update config.json: {e}")
     
     # Clean the title tag from the script so it doesn't get narrated
     raw_script = re.sub(r'\[TITLE:.*?\]', '', raw_script).strip()
-
-    # Check if we already have verified tracks to save time/API calls
-    # This is a simple optimization: if tracks.json exists and script hasn't changed (implied by caller), use it.
-    # However, we need to re-parse narrative segments and image URLs because those aren't in tracks.json fully structured yet.
-    # So we'll still parse, but maybe skip the network call if we match the ID?
-    
-    existing_tracks = {}
-    if os.path.exists(tracks_file):
-        try:
-            with open(tracks_file, "r") as f:
-                track_list = json.load(f)
-                for t in track_list:
-                    existing_tracks[t['video_id']] = t
-            print(f"⏩ Loaded {len(existing_tracks)} previously verified tracks.")
-        except:
-            pass
 
     print("🕵️ Verifying curation and checking tracks...")
     
     # Regex to find [TRACK: Title by Artist | ID: video_id]
     track_pattern = re.compile(r'\[TRACK:\s*(.*?)\s*\|\s*ID:\s*([\w-]+)\s*\]')
     
-    verified_tracks = []
-    narrative_segments = []
-    segment_visual_prompts = []
-    last_pos = 0
+    playlist_items = []
     
-    # Initialize Markdown content
+    # Initialize Markdown content (keeping for human readability)
     md_lines = []
     md_lines.append(f"# {playlist_title or state.get('topic', 'Curated Playlist')}")
     md_lines.append(f"\n**Topic:** {state.get('topic', 'Unknown')}")
@@ -225,7 +189,14 @@ def verify_curation_node(state: AgentState):
         md_lines.append(f"**Target Duration:** {state.get('duration')}")
     md_lines.append("\n---\n")
     
-    yt = YTMusic()
+    yt = None
+    if not skip_validation:
+        yt = YTMusic()
+    else:
+        print("⏩ Skipping track validation (assuming tracks are valid)...")
+    
+    last_pos = 0
+    narrative_count = 0
     
     for match in track_pattern.finditer(raw_script):
         # Add text before the match as a segment
@@ -235,26 +206,40 @@ def verify_curation_node(state: AgentState):
         image_url = extract_image_url(raw_segment)
         
         if clean_segment:
-            part_num = len(narrative_segments) + 1
-            narrative_segments.append(clean_segment)
-            segment_visual_prompts.append(image_url) # Storing URL in prompts list for now
+            narrative_count += 1
+            filename_base = f"part_{narrative_count:03d}"
+            
+            # Add to JSON structure
+            playlist_items.append({
+                "type": "narrative",
+                "text": clean_segment,
+                "image_url": image_url,
+                "audio_filename": f"{filename_base}.wav",
+                "video_filename": f"{filename_base}.mp4"
+            })
             
             # Add to Markdown
-            md_lines.append(f"## Part {part_num}")
+            md_lines.append(f"## Part {narrative_count}")
             if image_url:
                 md_lines.append(f"![Visual]({image_url})")
             md_lines.append(f"\n{clean_segment}\n")
-        else:
-            pass
         
         title_artist = match.group(1)
         video_id = match.group(2)
         
-        # Verify with YTMusic
-        if video_id in existing_tracks:
-             print(f"  ✅ Using cached track: {existing_tracks[video_id]['title']}")
-             verified_tracks.append(existing_tracks[video_id])
+        if skip_validation:
+             # Assume valid
+            print(f"  Skipping validation for: {title_artist} ({video_id})")
+            playlist_items.append({
+                "type": "track",
+                "video_id": video_id,
+                "title": title_artist, # Use original ref as title since we can't fetch real one
+                "artist": "Unknown Artist", # We don't have artist without API
+                "duration": 0,
+                "original_ref": title_artist
+            })
         else:
+            # Verify with YTMusic
             print(f"  Checking track: {title_artist} ({video_id})...")
             try:
                 song_details = yt.get_song(video_id)
@@ -264,25 +249,27 @@ def verify_curation_node(state: AgentState):
                 
                 print(f"    ✅ Verified: {valid_title} by {valid_author}")
                 
-                verified_tracks.append({
-                    "original_ref": title_artist,
+                playlist_items.append({
+                    "type": "track",
                     "video_id": video_id,
                     "title": valid_title,
                     "artist": valid_author,
-                    "duration": video_details.get('lengthSeconds', 0)
+                    "duration": video_details.get('lengthSeconds', 0),
+                    "original_ref": title_artist
                 })
                 
             except Exception as e:
                 print(f"    ❌ Validation failed for {video_id}: {e}")
-                verified_tracks.append({
-                    "original_ref": title_artist,
+                playlist_items.append({
+                    "type": "track",
                     "video_id": video_id,
+                    "original_ref": title_artist,
                     "error": str(e),
                     "verified": False
                 })
             
         # Add track to Markdown
-        track = verified_tracks[-1]
+        track = playlist_items[-1]
         t_title = track.get("title", title_artist)
         t_artist = track.get("artist", "")
         t_id = track.get("video_id")
@@ -300,17 +287,24 @@ def verify_curation_node(state: AgentState):
     final_image_url = extract_image_url(final_raw_segment)
     
     if final_clean_segment:
-        part_num = len(narrative_segments) + 1
-        narrative_segments.append(final_clean_segment)
-        segment_visual_prompts.append(final_image_url)
+        narrative_count += 1
+        filename_base = f"part_{narrative_count:03d}"
+        
+        playlist_items.append({
+            "type": "narrative",
+            "text": final_clean_segment,
+            "image_url": final_image_url,
+            "audio_filename": f"{filename_base}.wav",
+            "video_filename": f"{filename_base}.mp4"
+        })
         
         # Add to Markdown
-        md_lines.append(f"## Part {part_num}")
+        md_lines.append(f"## Part {narrative_count}")
         if final_image_url:
             md_lines.append(f"![Visual]({final_image_url})")
         md_lines.append(f"\n{final_clean_segment}\n")
     
-    print(f"✨ Verification Complete! Found {len(verified_tracks)} tracks, {len(narrative_segments)} narrative segments, and {len(segment_visual_prompts)} image URLs.")
+    print(f"✨ Verification Complete! Generated {len(playlist_items)} items.")
 
     # Save Markdown playlist
     md_path = os.path.join(playlist_dir, "playlist.md")
@@ -318,14 +312,19 @@ def verify_curation_node(state: AgentState):
         f.write("\n".join(md_lines))
     print(f"📄 Saved formatted playlist to: {md_path}")
 
-    # Save verified tracks
-    with open(tracks_file, "w") as f:
-        json.dump(verified_tracks, f, indent=2)
-    print(f"Verified tracks saved to: {tracks_file}")
+    # Save Curated Playlist JSON
+    curated_json_path = os.path.join(playlist_dir, "curated_playlist.json")
+    curated_data = {
+        "title": playlist_title or state.get("topic"),
+        "topic": state.get("topic"),
+        "items": playlist_items
+    }
+    
+    with open(curated_json_path, "w") as f:
+        json.dump(curated_data, f, indent=4)
+    print(f"💾 Saved structured playlist to: {curated_json_path}")
     
     return {
-        "narrative_segments": narrative_segments,
-        "verified_tracks": verified_tracks,
-        "segment_visual_prompts": segment_visual_prompts,
+        "curated_playlist": curated_data,
         "playlist_title": playlist_title
     }

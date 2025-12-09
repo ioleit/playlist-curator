@@ -53,7 +53,8 @@ python curator.py my_new_playlist
 ```
 
 **Output:** Inside `data/playlists/my_new_playlist/`, you will find:
-- `script.txt` & `tracks.json`
+- `curated_playlist.json`
+- `response.txt`
 - `part_001.mp4`, `part_002.mp4`, etc. (Narration videos)
 - `part_001.txt`, etc. (Descriptions/Credits)
 - etc.
@@ -71,7 +72,7 @@ Since the YouTube API has strict limits on video uploads, upload the generated c
 python -m yt_music.post_upload data/playlists/my_new_playlist --playlist-id PLxyz
 ```
 
-This creates `youtube_playlists.json` in your playlist folder—a "master plan" interleaving narration and songs.
+This enriches `curated_playlist.json` in your playlist folder with YouTube video IDs and descriptions.
 
 ### ✨ 4. Apply to YouTube
 This executes the plan, organizing the YouTube playlist.

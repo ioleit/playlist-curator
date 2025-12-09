@@ -1,6 +1,7 @@
 from .tts import KokoroTTS
 from core.agent_state import AgentState
 import os
+import json
 
 # Initialize TTS engine (doing this globally to avoid reloading model on every call, 
 # though in a real app you might want to manage this differently)
@@ -14,55 +15,62 @@ def generate_speech_node(state: AgentState):
     """
     Node that converts the generated text segments to speech files.
     """
-    segments = state.get("narrative_segments", [])
+    # Load curated playlist from JSON
+    playlist_dir = state.get("playlist_dir", "data")
+    curated_json_path = os.path.join(playlist_dir, "curated_playlist.json")
     
-    # Fallback for backward compatibility if only monolithic text exists
-    if not segments and state.get("text"):
-         print("⚠️ No segments found, treating full text as single segment.")
-         segments = [state.get("text")]
+    if not os.path.exists(curated_json_path):
+        print(f"❌ Error: {curated_json_path} not found. Cannot generate speech.")
+        # Fail early
+        raise FileNotFoundError(f"{curated_json_path} missing")
+        
+    try:
+        with open(curated_json_path, "r") as f:
+            curated_data = json.load(f)
+    except json.JSONDecodeError:
+        print(f"❌ Error: Invalid JSON in {curated_json_path}")
+        raise
 
-    if not segments:
+    items = curated_data.get("items", [])
+    narrative_items = [item for item in items if item.get("type") == "narrative"]
+    
+    if not narrative_items:
+        print("⚠️ No narrative segments found in curated playlist.")
         return {"audio_paths": []}
         
     if tts_engine:
-        # Use the playlist directory if available, otherwise fallback to data
-        output_dir = state.get("playlist_dir", "data")
-        os.makedirs(output_dir, exist_ok=True)
+        os.makedirs(playlist_dir, exist_ok=True)
         
         audio_paths = []
         
-        print(f"🗣️  Generating audio for {len(segments)} segments...")
+        print(f"🗣️  Generating audio for {len(narrative_items)} segments...")
         
-        for i, segment in enumerate(segments):
+        for i, item in enumerate(narrative_items):
+            segment = item.get("text", "")
             if not segment.strip():
                 continue
                 
-            # Format: part_001.wav, part_002.wav, etc.
-            filename_base = f"part_{i+1:03d}"
-            wav_filename = f"{filename_base}.wav"
-            txt_filename = f"{filename_base}.txt"
-            
-            wav_path = os.path.join(output_dir, wav_filename)
-            txt_path = os.path.join(output_dir, txt_filename)
-            
-            # Save the text file
-            with open(txt_path, "w") as f:
-                f.write(segment)
+            # Use filename from JSON
+            wav_filename = item.get("audio_filename")
+            if not wav_filename:
+                # Fallback should not happen if verified correctly, but just in case
+                print(f"  ❌ Error: Missing audio_filename for segment {i+1}")
+                continue
+                
+            wav_path = os.path.join(playlist_dir, wav_filename)
             
             # Check if audio already exists to save time
             if os.path.exists(wav_path) and os.path.getsize(wav_path) > 0:
-                 # Check if text content has changed? For now assume file existence is enough for simple caching
-                 # In a real system we'd hash the text and check against metadata
-                 print(f"  - Audio Part {i+1} already exists. Skipping generation.")
+                 print(f"  - Audio {wav_filename} already exists. Skipping generation.")
                  audio_paths.append(wav_path)
                  continue
 
-            print(f"  - Generating Part {i+1} ({len(segment)} chars)...")
+            print(f"  - Generating {wav_filename} ({len(segment)} chars)...")
             audio_file = tts_engine.generate_audio(segment, output_file=wav_path)
             audio_paths.append(audio_file)
             
         print(f"💾 Generated {len(audio_paths)} audio files.")
         return {"audio_paths": audio_paths}
     else:
-        print("⚠️ TTS engine not available. Skipping speech generation.")
-        return {"audio_paths": []}
+        print("❌ TTS engine not available. Cannot generate speech.")
+        raise RuntimeError("TTS engine not available")

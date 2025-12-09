@@ -58,7 +58,7 @@ python3 -m yt_music.post_upload data/playlists/space_jazz --playlist-id PLx4...
 
 *   **What it does:**
     *   Finds the uploads in the specified playlist.
-    *   Generates `youtube_playlists.json` in your playlist folder.
+    *   Enriches `curated_playlist.json` in your playlist folder.
     *   Constructs rich descriptions with transcript, links, and attribution.
 
 ### 3. Apply Changes (`update_youtube_playlist.py`)

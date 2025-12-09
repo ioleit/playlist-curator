@@ -1,20 +1,36 @@
 import os
 import requests
 import shutil
+import json
 from core.agent_state import AgentState
 
 def generate_images_node(state: AgentState):
     """
-    Downloads images from the URLs provided in segment_visual_prompts.
+    Downloads images from the URLs provided in curated_playlist.json.
     Falls back to placeholder if download fails.
     """
-    prompts = state.get("segment_visual_prompts", [])
     playlist_dir = state.get("playlist_dir", "data")
+    curated_json_path = os.path.join(playlist_dir, "curated_playlist.json")
     
-    if not prompts:
+    if not os.path.exists(curated_json_path):
+        print(f"❌ Error: {curated_json_path} not found. Cannot download images.")
+        raise FileNotFoundError(f"{curated_json_path} missing")
+        
+    try:
+        with open(curated_json_path, "r") as f:
+            curated_data = json.load(f)
+    except json.JSONDecodeError:
+        print(f"❌ Error: Invalid JSON in {curated_json_path}")
+        raise
+
+    items = curated_data.get("items", [])
+    # Filter for narrative items that have an image_url
+    narrative_items = [item for item in items if item.get("type") == "narrative"]
+    
+    if not narrative_items:
         return {}
         
-    print(f"🖼️  Processing {len(prompts)} images...")
+    print(f"🖼️  Processing images for {len(narrative_items)} segments...")
     
     # Ensure we have a default placeholder just in case
     placeholder_path = os.path.join(playlist_dir, "placeholder.jpg")
@@ -35,17 +51,25 @@ def generate_images_node(state: AgentState):
         'User-Agent': 'PlaylistCuratorBot/1.0 (mailto:your-email@example.com)'
     }
 
-    for i, url in enumerate(prompts):
-        target_path = os.path.join(playlist_dir, f"image_{i+1:03d}.jpg")
+    for i, item in enumerate(narrative_items):
+        url = item.get("image_url")
+        # Determine image filename based on the audio filename pattern or a new field
+        # We'll use the base of the audio filename but with .jpg extension
+        audio_filename = item.get("audio_filename")
+        if not audio_filename:
+             continue
+             
+        base_name = os.path.splitext(audio_filename)[0]
+        target_path = os.path.join(playlist_dir, f"{base_name}.jpg")
         
         # Check if already downloaded to save time
         if os.path.exists(target_path) and os.path.getsize(target_path) > 0:
-            print(f"  - Image {i+1} already exists. Skipping download.")
+            print(f"  - Image for {base_name} already exists. Skipping download.")
             downloaded_images.append(target_path)
             continue
         
         if url and url.startswith("http"):
-            print(f"  - Downloading image for segment {i+1}: {url}...")
+            print(f"  - Downloading image for {base_name}: {url}...")
             try:
                 response = requests.get(url, headers=headers, stream=True, timeout=10)
                 if response.status_code == 200:
@@ -59,13 +83,6 @@ def generate_images_node(state: AgentState):
                     print(f"    ❌ Failed to download (status {response.status_code})")
             except Exception as e:
                 print(f"    ❌ Error downloading: {e}")
-        
-        # Fallback
-        if os.path.exists(placeholder_path):
-            print(f"    ⚠️ Using placeholder for segment {i+1}")
-            downloaded_images.append(placeholder_path)
-        else:
-            downloaded_images.append(None)
             
     return {"downloaded_images": downloaded_images}
 
@@ -74,10 +91,23 @@ def create_video_node(state: AgentState):
     Takes audio files and downloaded images to create video files.
     Uses FFmpeg for Ken Burns effect or simple static image.
     """
-    audio_paths = state.get("audio_paths", [])
     playlist_dir = state.get("playlist_dir", "data")
+    curated_json_path = os.path.join(playlist_dir, "curated_playlist.json")
     
-    if not audio_paths:
+    if not os.path.exists(curated_json_path):
+        print(f"❌ Error: {curated_json_path} not found. Cannot create videos.")
+        raise FileNotFoundError(f"{curated_json_path} missing")
+        
+    try:
+        with open(curated_json_path, "r") as f:
+            curated_data = json.load(f)
+    except json.JSONDecodeError:
+        raise
+
+    items = curated_data.get("items", [])
+    narrative_items = [item for item in items if item.get("type") == "narrative"]
+    
+    if not narrative_items:
         return {"video_paths": []}
         
     video_paths = []
@@ -92,35 +122,40 @@ def create_video_node(state: AgentState):
             
     if not ffmpeg_cmd:
         print("❌ Error: FFmpeg not found. Please install it (e.g., 'brew install ffmpeg').")
-        return {"video_paths": []}
+        raise RuntimeError("FFmpeg not found")
         
-    print(f"🎥 Creating videos for {len(audio_paths)} segments using {ffmpeg_cmd}...")
+    print(f"🎥 Creating videos for {len(narrative_items)} segments using {ffmpeg_cmd}...")
     
-    # Get playlist name for file naming
-    playlist_name = os.path.basename(playlist_dir)
-    if not playlist_name:
-        playlist_name = "playlist"
-
     from speech_to_video.video_creator import VideoCreator
     creator = VideoCreator(output_dir=playlist_dir)
 
-    for i, audio_path in enumerate(audio_paths):
-        if not os.path.exists(audio_path):
+    for i, item in enumerate(narrative_items):
+        audio_filename = item.get("audio_filename")
+        video_filename = item.get("video_filename")
+        
+        if not audio_filename or not video_filename:
+            print(f"  ❌ Error: Missing filename config for item {i}")
             continue
             
-        filename = f"{playlist_name}_part_{i+1:03d}.mp4"
-        output_path = os.path.join(playlist_dir, filename)
+        audio_path = os.path.join(playlist_dir, audio_filename)
+        output_path = os.path.join(playlist_dir, video_filename)
         
+        if not os.path.exists(audio_path):
+            print(f"  ⚠️ Audio missing: {audio_filename}. Skipping.")
+            continue
+            
         # Skip if video already exists
         if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
-             print(f"  - Video {filename} already exists. Skipping render.")
+             print(f"  - Video {video_filename} already exists. Skipping render.")
              video_paths.append(output_path)
              continue
 
         # Look for specific image first
-        image_path = os.path.join(playlist_dir, f"image_{i+1:03d}.jpg")
+        # We assume image has same base name as audio/video but .jpg
+        base_name = os.path.splitext(audio_filename)[0]
+        image_path = os.path.join(playlist_dir, f"{base_name}.jpg")
         
-        # If specific image exists, use it with no waveform (or whatever default behavior)
+        # If specific image exists, use it
         # If not, pass None so VideoCreator finds the background.png and uses waveform
         if os.path.exists(image_path) and os.path.getsize(image_path) > 0:
             pass # image_path is valid
@@ -130,7 +165,7 @@ def create_video_node(state: AgentState):
         result_path = creator.create_video(
             audio_path=audio_path, 
             image_path=image_path, 
-            output_filename=filename,
+            output_filename=video_filename,
             use_waveform=(image_path is None) # Force waveform if falling back
         )
         

@@ -164,7 +164,7 @@ def get_playlist_items(youtube, playlist_id):
     return items
 
 def main():
-    parser = argparse.ArgumentParser(description="Update playlist from youtube_playlists.json")
+    parser = argparse.ArgumentParser(description="Update playlist from curated_playlist.json")
     parser.add_argument("playlist_dir", help="Path to the playlist directory (e.g. data/playlists/space_jazz)")
     args = parser.parse_args()
     
@@ -177,7 +177,7 @@ def main():
     podcast_playlist_id = global_config.get("podcast_playlist_id")
     
     playlist_dir = args.playlist_dir
-    json_path = os.path.join(playlist_dir, "youtube_playlists.json")
+    json_path = os.path.join(playlist_dir, "curated_playlist.json")
     
     if not os.path.exists(json_path):
         print(f"❌ Error: {json_path} not found. Run post_upload.py first.")
@@ -188,7 +188,7 @@ def main():
         
     playlist_id = playlist_data.get("playlist_id")
     if not playlist_id:
-        print("❌ Error: No playlist_id in JSON.")
+        print("❌ Error: No playlist_id in curated_playlist.json. Did you run post_upload.py?")
         return
 
     youtube = get_authenticated_service()

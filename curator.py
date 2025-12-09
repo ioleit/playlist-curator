@@ -58,6 +58,7 @@ def main():
     parser.add_argument("playlist_name", nargs="?", default="example", help="Name of the playlist directory (in data/playlists/)")
     parser.add_argument("--clean", action="store_true", help="Remove generated files before starting")
     parser.add_argument("--inference-only", action="store_true", help="Only generate the playlist text/script, skip TTS and video generation")
+    parser.add_argument("--skip-validation", action="store_true", help="Skip checking for prompt equality and re-validating tracks (implies resume)")
     args = parser.parse_args()
     
     playlist_name = args.playlist_name
@@ -141,7 +142,8 @@ def main():
         "playlist_dir": playlist_dir,
         "system_prompt": system_prompt,
         "text": None,
-        "audio_path": None
+        "audio_path": None,
+        "skip_validation": args.skip_validation
     }
     
     # Run the graph

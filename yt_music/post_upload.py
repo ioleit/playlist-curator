@@ -39,7 +39,7 @@ def get_all_playlist_items(youtube, playlist_id):
     return items
 
 def main():
-    parser = argparse.ArgumentParser(description="Build youtube_playlists.json from uploaded clips and config.")
+    parser = argparse.ArgumentParser(description="Enrich curated_playlist.json with uploaded clips metadata.")
     parser.add_argument("playlist_dir", help="Path to the playlist directory (e.g. data/playlists/space_jazz)")
     parser.add_argument("--playlist-id", help="The ID of the manual playlist containing your uploads", required=True)
     args = parser.parse_args()
@@ -58,8 +58,7 @@ def main():
         global_config = json.load(f)
     
     config_path = os.path.join(playlist_dir, "config.json")
-    tracks_path = os.path.join(playlist_dir, "tracks.json")
-    script_path = os.path.join(playlist_dir, "script.txt")
+    curated_playlist_path = os.path.join(playlist_dir, "curated_playlist.json")
 
     if not os.path.exists(config_path):
         print(f"Error: {config_path} not found.")
@@ -68,10 +67,17 @@ def main():
     with open(config_path, "r") as f:
         playlist_config = json.load(f)
     
-    tracks = []
-    if os.path.exists(tracks_path):
-        with open(tracks_path, "r") as f:
-            tracks = json.load(f)
+    if not os.path.exists(curated_playlist_path):
+        print(f"Error: {curated_playlist_path} not found. Please run the curation process first.")
+        return
+
+    with open(curated_playlist_path, "r") as f:
+        curated_data = json.load(f)
+        
+    items = curated_data.get("items", [])
+    if not items:
+        print("Error: curated_playlist.json has no items.")
+        return
 
     channel_id = global_config.get("channel_id")
     if not channel_id or channel_id == "UC_YOUR_CHANNEL_ID_HERE":
@@ -83,7 +89,7 @@ def main():
         print("Authentication failed.")
         return
 
-    playlist_title = playlist_config.get("topic", "Curated Playlist") + " (Narrated)"
+    playlist_title = curated_data.get("title", playlist_config.get("topic", "Curated Playlist")) + " (Narrated)"
     
     playlist_id = args.playlist_id
     if not playlist_id:
@@ -94,84 +100,64 @@ def main():
 
     # Get all items in the playlist to find uploaded videos
     print("Fetching playlist items to find uploaded narration parts...")
-    items = get_all_playlist_items(youtube, playlist_id)
+    yt_items = get_all_playlist_items(youtube, playlist_id)
     
-    # Find narration parts by title
-    # Expect titles like "part_001.mp4", "part_1.mp4", "part_001", etc.
-    narration_parts = {}
-    for item in items:
+    # Find narration parts by title matching "part_N" pattern
+    # The assumption is the user uploaded the generated files part_001.mp4, etc.
+    narration_uploads = {}
+    for item in yt_items:
         title = item['snippet']['title']
         vid_id = item['contentDetails']['videoId']
         
-        # Check pattern
-        # Look for explicit part_N.mp4 or just part_N, allowing spaces or underscores
         match = re.search(r'part[ _](\d+)', title, re.IGNORECASE)
-        
         if match:
-            # Make sure it's not "Part 1: Topic" (which is the formatted title)
-            # The formatted title usually has spaces or colon. 
-            # If the user uploaded raw files, they likely don't have spaces if they matched "part_001.mp4"
-            # But if we run this multiple times, the title might have changed!
-            # The user said: "expect all the narration clips to be uploaded ... with their original path name ... as the title".
-            # This implies a fresh upload or we need to be careful.
-            # BUT, if we already renamed them, we can't find them by original name easily unless we store them.
-            # The user implies this is for the "post upload" step, assuming fresh uploads or titles are preserved.
-            # If titles are already changed, this might fail. I will assume titles are raw.
             part_num = int(match.group(1))
-            narration_parts[part_num] = vid_id
+            narration_uploads[part_num] = vid_id
             print(f"  Found narration part {part_num}: {title} ({vid_id})")
 
-    if not narration_parts:
+    if not narration_uploads:
         print("Warning: No narration parts found in playlist matching 'part_N' pattern.")
 
-    # Build script for image filenames (attribution)
-    image_filenames = []
-    if os.path.exists(script_path):
-        with open(script_path, "r") as f:
-            script_content = f.read()
-            matches = re.findall(r'\[IMAGE_URL:\s*(.*?)\]', script_content)
-            for m in matches:
-                filename = m.split('/')[-1]
-                filename = unquote(filename)
-                image_filenames.append(filename)
-
     # Assemble the plan
-    planned_items = []
-    
-    # Determine how many iterations (parts/tracks)
-    max_part = max(narration_parts.keys()) if narration_parts else 0
-    num_tracks = len(tracks)
-    count = max(num_tracks, max_part)
-    
-    print(f"Constructing plan for {count} segments...")
+    print(f"Enriching curated playlist with {len(items)} items...")
 
-    for i in range(count):
-        idx = i # 0-based index
-        part_num = idx + 1
+    narrative_counter = 0
+
+    for idx, item in enumerate(items):
+        item_type = item.get("type")
         
-        # 1. Add Narration Part
-        if part_num in narration_parts:
-            vid_id = narration_parts[part_num]
+        if item_type == "narrative":
+            narrative_counter += 1
+            item["kind"] = "narration"
             
-            # Generate Metadata
-            desc_file = os.path.join(playlist_dir, f"part_{part_num:03d}.txt")
-            description = ""
-            if os.path.exists(desc_file):
-                with open(desc_file, "r") as f:
-                    description = f.read()
+            # Find the uploaded video ID for this part
+            vid_id = narration_uploads.get(narrative_counter)
             
-            attribution = ""
-            if idx < len(image_filenames):
-                img_file = image_filenames[idx]
-                # Assuming get_wikimedia_attribution works relative to CWD or needs absolute?
-                # The original script passed filename.
-                # But get_wikimedia_attribution uses os.path.basename so it's fine.
-                # It fetches from API.
-                attribution = get_wikimedia_attribution(img_file)
+            if not vid_id:
+                print(f"  Warning: Missing upload for narrative part {narrative_counter}")
+                continue
             
-            title = f"{playlist_config.get('topic', 'Music History')} (Episode {part_num})"
+            item["video_id"] = vid_id
+                
+            # Prepare metadata
+            part_title = f"{curated_data.get('topic', 'Music History')} (Episode {narrative_counter})"
+            item["title"] = part_title # Update title for YouTube
             
-            # Construct Description
+            # Links to prev/next songs
+            # Look backwards for previous track
+            prev_track = None
+            for i in range(idx - 1, -1, -1):
+                if items[i].get("type") == "track":
+                    prev_track = items[i]
+                    break
+            
+            # Look forwards for next track
+            next_track = None
+            for i in range(idx + 1, len(items)):
+                if items[i].get("type") == "track":
+                    next_track = items[i]
+                    break
+            
             intro_note = (
                 f"This video is part of the narrated playlist '{playlist_title}'. "
                 "It provides context and history for the music and is best experienced as part of the full journey."
@@ -180,82 +166,63 @@ def main():
             
             links_block = [intro_note, "", playlist_link]
             
-            # Previous Song (The song before this narration segment)
-            # Narration 1 (idx=0) is before Song 1 (idx=0). 
-            # Narration 2 (idx=1) is before Song 2 (idx=1) but AFTER Song 1 (idx=0).
-            if idx > 0 and idx - 1 < len(tracks):
-                prev_track = tracks[idx-1]
+            if prev_track:
                 p_title = prev_track.get('title', 'Previous Song')
                 p_id = prev_track.get('video_id')
                 links_block.append(f"⏮️ Previous Song: {p_title} (https://youtu.be/{p_id})")
-
-            # Next Song (The song after this narration segment)
-            if idx < len(tracks):
-                next_track = tracks[idx]
+                
+            if next_track:
                 n_title = next_track.get('title', 'Next Song')
                 n_id = next_track.get('video_id')
                 links_block.append(f"⏭️ Next Song: {n_title} (https://youtu.be/{n_id})")
 
             links_text = "\n".join(links_block)
             
-            # Combine parts with length checking
-            # Max length ~5000. Reserve space for footer.
-            # Structure: Links \n---\n Transcript \n---\n Attribution
-            
+            # Attribution
             footer = ""
-            if attribution:
-                footer = "\n\n---\n" + attribution
+            image_url = item.get("image_url")
+            if image_url:
+                filename = image_url.split('/')[-1]
+                filename = unquote(filename)
+                attribution = get_wikimedia_attribution(filename)
+                if attribution:
+                    footer = "\n\n---\n" + attribution
             
-            # Allow some buffer
+            # Transcript
+            description = item.get("text", "")
+            
+            # Combine
             MAX_LEN = 4800 
-            fixed_len = len(links_text) + len(footer) + 10 # 10 for separators
+            fixed_len = len(links_text) + len(footer) + 10 
             remaining = MAX_LEN - fixed_len
             
             final_desc = links_text + "\n\n---\n\n"
             
             if len(description) > remaining:
-                # Crop transcript
                 cropped_desc = description[:remaining-50] + "... [Transcript Truncated]"
                 final_desc += cropped_desc
             else:
                 final_desc += description
             
             final_desc += footer
+            
+            item["description"] = final_desc
+            
+        elif item_type == "track":
+            item["kind"] = "song"
+            # Tracks already have video_id and title
+            # description is None or not set, which is fine
 
-            planned_items.append({
-                "kind": "narration",
-                "video_id": vid_id,
-                "title": title,
-                "description": final_desc
-            })
-        else:
-            print(f"  Warning: Missing narration part {part_num} in playlist uploads.")
-
-        # 2. Add Song
-        if idx < len(tracks):
-            song = tracks[idx]
-            planned_items.append({
-                "kind": "song",
-                "video_id": song['video_id'],
-                "title": song.get('title', 'Unknown Song'),
-                # We don't change song metadata usually
-                "description": None 
-            })
-
-    output_data = {
-        "playlist_id": playlist_id,
-        "playlist_title": playlist_title,
-        "playlist_description": "A curated music journey. Listen to the full experience with narration.",
-        "items": planned_items
-    }
+    curated_data["playlist_id"] = playlist_id
+    curated_data["playlist_title"] = playlist_title
+    curated_data["playlist_description"] = f"A curated music journey about {curated_data.get('topic')}. Listen to the full experience with narration."
     
-    out_path = os.path.join(playlist_dir, "youtube_playlists.json")
-    with open(out_path, "w") as f:
-        json.dump(output_data, f, indent=2)
+    # Write back to curated_playlist.json
+    with open(curated_playlist_path, "w") as f:
+        json.dump(curated_data, f, indent=4) # Use indent 4 to match common style if needed, or 2
         
-    print(f"\n✅ Generated {out_path} with {len(planned_items)} items.")
+    print(f"\n✅ Enriched {curated_playlist_path} with YouTube metadata.")
     print("You can now run the update script to apply these changes.")
 
 if __name__ == "__main__":
     main()
-
