@@ -11,6 +11,7 @@ from core.config import GlobalConfig, PlaylistConfig, get_playlist_dir, playlist
 from core.models.playlist import CuratedPlaylist, CuratedPlaylistItem
 from .tools import search_youtube_music, search_musicbrainz, search_google
 from .image_tools import search_wikipedia_images
+from .vibe_oracle import order_by_vibes
 
 def curate_playlist_node(state: AgentState):
     playlist_id = state["playlist_id"]
